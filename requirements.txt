@@ -1,0 +1,6 @@
+arcade
+esper
+sqlalchemy
+numpy
+dearpygui
+pillow
