@@ -1,189 +1,231 @@
-# OpenPower: Technical Specification
+Here is the updated, complete **Technical Specification** for the OpenPower repository. It incorporates the "Hybrid Data" approach (TOML/TSV), the "Vertical Slicing" architecture, and the full "Server-Authoritative" network model.
 
-**OpenPower** is an open-source, data-driven geopolitical grand strategy simulator engine written in pure Python. It is designed as a modern, highly moddable spiritual successor to titles like *SuperPower 2*, utilizing an Entity-Component-System (ECS) architecture.
+You can save this as `README.md` or `docs/ARCHITECTURE.md`.
+
+```markdown
+# OpenPower: Technical Specification & Architecture
+
+**OpenPower** is a modular, data-driven grand strategy engine written in Python. It is designed as a modern, open-source spiritual successor to *SuperPower 2*, emphasizing extreme moddability, performance, and clear architectural separation between the **Engine** (Infrastructure) and the **Game** (Content & Rules).
+
+---
 
 ## 1. Technology Stack
 
 * **Language:** Python 3.10+
-* **Core Logic:** [Esper](https://github.com/benmoran/esper) (ECS - Entity Component System)
-* **Rendering:** [Arcade](https://api.arcade.academy/) (OpenGL 3.3+ wrapper)
-* **User Interface:** [Arcade-ImGui](https://github.com/hbldh/arcade-imgui) (Dear ImGui implementation)
-* **Data & Persistence:** [SQLAlchemy](https://www.sqlalchemy.org/) (SQLite)
-* **Image Processing:** Pillow (PIL) for map data analysis.
+* **Core Architecture:** [Esper](https://github.com/benmoran/esper) (Entity-Component-System).
+* **Rendering:** [Arcade](https://api.arcade.academy/) (OpenGL 3.3+).
+* **UI:** [Arcade-ImGui](https://github.com/hbldh/arcade-imgui) (Dear ImGui bindings).
+* **Data Configuration:** [rtoml](https://pypi.org/project/rtoml/) (High-performance Rust-based TOML parser/writer).
+* **Bulk Data:** CSV/TSV (Standard Library) for large datasets like map provinces.
+* **Runtime Database:** [SQLAlchemy](https://www.sqlalchemy.org/) (SQLite) for caching and save games.
+* **Localization:** GNU Gettext (`.po` / `.mo` files).
 
 ---
 
-## 2. Architectural Philosophy
+## 2. Project Structure
 
-OpenPower follows a **"Modding First"** and **"Data-Driven"** philosophy. The engine (`src/`) is entirely agnostic of the gameplay rules. The actual game (taxes, tanks, diplomacy) is implemented as the "Base Mod" (`modules/base/`).
-
-### Core Pillars
-1.  **Vertical Slicing:** Code is organized by **Feature** (e.g., Economy, War), not by file type. A single folder contains the Components, Systems, and Data definitions for a specific mechanic.
-2.  **Server-Authoritative:** The simulation logic runs headless (server-side logic). The client sends **Commands** and receives **State Updates**. Singleplayer is simply a local server and client running in parallel.
-3.  **Ephemeral Database:** The runtime database (`cache/game.db`) is rebuilt from JSON source files at every launch. Modders edit JSONs; the engine plays with SQL.
-
----
-
-## 3. Project Structure
+The project strictly separates **Infrastructure** (`src/`) from **Content** (`modules/`).
 
 ```text
 OpenPower/
-├── .venv/                      # Python Virtual Environment
-├── mods.json                   # Load Order Config (e.g., ["base", "user_mod"])
-├── main.py                     # Entry Point
+├── .venv/                      # Virtual Environment
+├── mods.json                   # Load Order Configuration
+├── main.py                     # Application Entry Point
+├── requirements.txt            # Dependencies
 │
-├── cache/                      # Runtime generated files
-│   └── game.db                 # SQLite DB (Result of merged JSONs)
-├── saves/                      # User save files (Serialized ECS snapshots)
+├── cache/                      # Ephemeral Runtime Data
+│   └── game.db                 # SQLite DB (Generated from TOML/TSV on launch)
+├── saves/                      # User Save Files (Serialized SQLite snapshots)
 │
-├── modules/                    # --- CONTENT & GAMEPLAY LOGIC ---
-│   ├── base/                   # The Vanilla Game
+├── modules/                    # --- GAMEPLAY CONTENT & LOGIC ---
+│   ├── base/                   # The Vanilla Game (treated as a Mod)
 │   │   ├── info.json           # Metadata
-│   │   ├── assets/             # Raw media (PNG, WAV)
-│   │   │   └── maps/provinces.png  # Color ID Map (10000x5000)
-│   │   ├── data/               # STATIC DATA (JSON)
-│   │   │   ├── countries/      # Country definitions
-│   │   │   └── resources.json  # Resource definitions
-│   │   └── logic/              # DYNAMIC RULES (Python)
-│   │       ├── economy/        # Economy Module
-│   │       │   ├── components.py
-│   │       │   └── systems.py
-│   │       └── warfare/        # Warfare Module
-│   │           └── units.py
+│   │   ├── assets/             # Binary Media
+│   │   │   ├── maps/
+│   │   │   │   ├── provinces.png   # Color ID Map (10k x 5k)
+│   │   │   │   └── terrain.png     # Visual Texture
+│   │   │   └── locales/        # i18n (.po files)
+│   │   │
+│   │   ├── data/               # STATIC DATA (Source of Truth)
+│   │   │   ├── countries/      # TOML files (e.g., ua.toml)
+│   │   │   ├── map/
+│   │   │   │   └── provinces.tsv   # Bulk Data (ID, Name, Terrain)
+│   │   │   └── rules.toml      # Global constants
+│   │   │
+│   │   └── logic/              # DYNAMIC RULES (Python - Vertical Slicing)
+│   │       ├── economy/        # Feature: Economy
+│   │       │   ├── components.py   # @dataclass Economy
+│   │       │   └── systems.py      # @register_system EconomySystem
+│   │       ├── warfare/        # Feature: Warfare
+│   │       │   ├── units.py
+│   │       │   └── combat.py
+│   │       └── main.py         # Logic entry point
 │   │
-│   └── user_mod/               # Example User Mod
-│       ├── data/               # Overrides base JSONs
-│       └── logic/              # Injects new Systems
+│   └── user_mod/               # Example Mod
+│       ├── data/               # Overrides base TOMLs
+│       └── logic/              # Injects new mechanics (e.g., Radiation)
 │
-└── src/                        # --- ENGINE INFRASTRUCTURE ---
-    ├── shared/                 # Shared Code (Client & Server)
-    │   ├── commands.py         # Network DTOs (Data Transfer Objects)
+└── src/                        # --- ENGINE INFRASTRUCTURE (Immutable) ---
+    ├── shared/                 # Code shared between Client & Server
+    │   ├── commands.py         # Network DTOs (CmdSetTax, CmdMoveUnit)
     │   └── constants.py
     │
-    ├── core/                   # [BACKEND] Simulation Engine
-    │   ├── resources.py        # Virtual File System (VFS)
-    │   ├── mod_loader.py       # Python Logic Injector
-    │   ├── bootstrap.py        # ETL: JSON -> SQLite Pipeline
-    │   ├── auto_registry.py    # Decorators (@register_system)
-    │   ├── ecs/                # Esper Wrapper
-    │   ├── db/                 # SQLAlchemy Models
-    │   ├── network/            # Server Socket Logic
-    │   └── persistence/        # Save/Load Manager
+    ├── core/                   # [BACKEND] Simulation Server (Headless)
+    │   ├── loader.py           # VFS & TOML/TSV Parsing
+    │   ├── bootstrap.py        # ETL Pipeline: Merge Mods -> Fill SQLite
+    │   ├── mod_loader.py       # Recursively imports `modules/*/logic/*.py`
+    │   ├── auto_registry.py    # Decorator logic (@register_system)
+    │   ├── i18n.py             # Gettext wrapper
+    │   │
+    │   ├── network/            # Server Socket & Packet Handling
+    │   ├── persistence/        # Save/Load Managers
+    │   ├── db/                 # SQLAlchemy Models (Schema)
+    │   └── ecs/                # World Manager
     │
-    └── client/                 # [FRONTEND] Visualization
+    └── client/                 # [FRONTEND] Visualization Client
         ├── window.py           # Main Arcade Window
-        ├── ui/                 # ImGui Generators (Reflection UI)
-        └── renderers/          # Visual Layers (Map, Units)
+        ├── ui/                 # ImGui Generators (Reflection-based)
+        └── renderers/          # Visual Layers (Map Shader, Units)
 
 ```
 
 ---
 
-## 4. Data Pipeline (The Boot Sequence)
+## 3. Data Architecture (The Hybrid Approach)
 
-To avoid "SQL Hell" for modders, the engine uses a **JSON-to-Database** pipeline.
+To balance **Developer Experience (DX)** with **Performance**, we use a hybrid data strategy.
 
-1. **VFS Resolution:** The `ResourceManager` reads `mods.json` to determine the load order.
-2. **Deep Merge:** The `Bootstrap` script scans `modules/*/data/`. If `user_mod` has a file that exists in `base`, the dictionaries are merged (User Mod overrides Base).
-3. **Hydration:** The merged data is inserted into an in-memory or cached SQLite database using SQLAlchemy models.
-4. **ECS Instantiation:** The `WorldManager` queries the SQLite DB to create Entity-Component relationships in RAM.
+### A. Configuration: TOML (`rtoml`)
 
-**Flow:**
-`JSON Files (Mods)` -> `Deep Merge` -> `SQLite Cache` -> `ECS RAM (Live Game)`
+Used for: Countries, Units, Technologies, Game Rules.
+
+* **Why:** Human-readable, supports comments (`#`), structured hierarchy (`[section]`).
+* **Performance:** `rtoml` (Rust) parses files instantly.
+* **Example (`ua.toml`):**
+```toml
+id = "UA"
+name = "Ukraine"
+[economy]
+budget = 50_000_000
+tax_rate = 0.18
+
+```
+
+
+
+### B. Bulk Data: TSV/CSV
+
+Used for: Province definitions (10,000+ rows).
+
+* **Why:** TOML/JSON is too verbose for flat arrays. TSV is compact and fast to parse.
+* **Example (`provinces.tsv`):**
+```tsv
+id  name    terrain_id  owner_id
+1   Kyiv    plains      UA
+2   Lviv    hills       UA
+
+```
+
+
+
+### C. Runtime Cache: SQLite
+
+The engine **never** reads TOML/TSV during gameplay.
+
+1. **Bootstrap:** On launch, the engine merges data from all mods.
+2. **Hydration:** Merged data is inserted into `cache/game.db` (SQLite).
+3. **Gameplay:** ECS entities are created by querying SQLite.
 
 ---
 
-## 5. Logic Injection & Modding
+## 4. Logic & Modding (Vertical Slicing)
 
-Logic is handled via **Python Injection**. The engine recursively scans `modules/*/logic/` for Python scripts.
+Game logic is organized by **Feature**, not by file type.
 
-### The Auto-Registry Pattern
+### The Logic Folder
 
-To minimize boilerplate, we use decorators to register systems automatically.
+Located in `modules/base/logic/`. Contains pure Python code.
 
-**Example: `modules/base/logic/economy/systems.py**`
+* **Components:** Standard Python `dataclasses`.
+* **Systems:** `esper.Processor` subclasses.
+
+### Auto-Registration
+
+To avoid manual boilerplate, systems register themselves via decorators.
+
+**File: `modules/base/logic/economy/systems.py**`
 
 ```python
 from src.core.auto_registry import register_system
 import esper
 
-@register_system(priority=100)
+@register_system(priority=10)
 class EconomySystem(esper.Processor):
     def process(self, dt):
-        # Logic implementation
+        # ... logic implementation ...
         pass
 
 ```
 
-The `mod_loader.py` imports this file, and the decorator adds the class to the Engine's initialization queue.
+The `src/core/mod_loader.py` recursively scans the `logic` folders of all active mods and executes these files, triggering the registration.
 
 ---
 
-## 6. Rendering Architecture
+## 5. Networking & State Management
 
-Rendering is separated into distinct layers handled by `Arcade`.
+The architecture uses a **Command Pattern** to ensure determinism and separation of concerns.
 
-1. **Map Layer (Terrain):** Standard texture rendering.
-2. **Political Layer (Shaders):** A fragment shader utilizes a `provinces.png` (Color ID Map). It samples the pixel color, converts it to a Region ID, checks the ECS for the region's owner, and renders the owner's color.
-3. **UI Layer (ImGui):**
-* **Reflection UI:** The UI generator inspects Python `dataclasses` (Components). If a component has a field `budget: float`, the UI automatically renders an input field.
-* No manual UI coding is required for standard data.
+1. **Input:** Player interacts with UI (e.g., changes tax slider).
+2. **Command:** Client generates a DTO: `CmdSetTax(country="UA", val=0.2)`.
+3. **Transmission:** Command is serialized and sent to the Server (Localhost or Remote).
+4. **Execution:** Server validates the command and updates the ECS Component.
+5. **Replication:** Server broadcasts a `WorldUpdate` packet to all clients.
+6. **Rendering:** Clients update their local mirror and render the frame.
+
+---
+
+## 6. Rendering Pipeline
+
+Rendering is handled in layers by `Arcade`.
+
+1. **Map Layer:** Renders the terrain texture.
+2. **Political Layer (Shader):**
+* Uses a Fragment Shader and the `provinces.png` (Color ID Map).
+* Lookups the Province ID from the pixel color.
+* Lookups the Owner ID from the Province data.
+* Renders the Owner's color (with alpha blending).
+
+
+3. **Object Layer:** Sprites for units/cities.
+4. **UI Layer (ImGui):**
+* **Reflection UI:** Automatically generates inspector windows by reading the type hints of ECS Components (`budget: float` -> Input Float).
 
 
 
 ---
 
-## 7. Networking & State Management
+## 7. Internationalization (i18n)
 
-The game utilizes a **Command Pattern** for state changes.
+* **Format:** GNU Gettext (`.po` files).
+* **Workflow:**
+* Python code uses `tr("KEY")`.
+* Data files (TOML) store keys: `name_key = "UNIT_TANK"`.
+* UI resolves keys to text at render time.
 
-### Command Flow
 
-1. **Input:** Player interacts with UI (e.g., changes Tax Rate).
-2. **Command:** Client sends a `SetTaxCommand(country_id="UA", value=0.2)` DTO.
-3. **Server Validation:** Server checks if the player owns "UA".
-4. **Execution:** Server updates the ECS Component.
-5. **Replication:** Server broadcasts a `WorldStateUpdate` packet to all clients.
-
-### Persistence (Saves)
-
-Saving is essentially serializing the current ECS state back into a database format.
-
-* **Save:** ECS RAM -> `saves/savegame.db`
-* **Load:** `saves/savegame.db` -> ECS RAM
 
 ---
 
-## 8. Getting Started
+## 8. Development Workflow
 
-### Prerequisites
-
-* Python 3.10+
-* Pip
-
-### Installation
-
-1. Clone the repository.
-2. Create a virtual environment:
-```bash
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-
-```
-
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-
-```
-
-
-4. Run the engine:
-```bash
-python main.py
-
-```
+1. **Setup:** `pip install -r requirements.txt`.
+2. **Run Game:** `python main.py`.
+3. **Run Editor:** `python main.py --editor` (Reuses engine with Editor UI tools).
+4. **Create Mod:**
+* Create `modules/my_mod/`.
+* Add `data/countries/ua.toml` to override base stats.
+* Add `logic/my_sys.py` to inject Python code.
+* Add to `mods.json`.
 
 
 
