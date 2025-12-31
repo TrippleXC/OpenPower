@@ -2,11 +2,11 @@ import arcade
 
 class CameraController:
     """
-    Керує логікою зуму та панорамування камери.
-    Відповідає логіці Godot: editor_camera.gd
+    Manages camera zoom and pan logic.
+    Ported logic from the Godot project's 'editor_camera.gd'.
     """
     def __init__(self, start_pos: arcade.math.Vector2):
-        # Налаштування (можна винести в constants.py)
+        # Movement sensitivity constants.
         self.ZOOM_SPEED = 0.05
         self.MIN_ZOOM = 0.1
         self.MAX_ZOOM = 5.0
@@ -15,7 +15,7 @@ class CameraController:
         self.zoom = 1.0
 
     def scroll(self, scroll_y: int):
-        """Обробка прокрутки коліщатка (Зум)."""
+        """Processes mouse wheel events for zooming."""
         if scroll_y > 0:
             self.zoom *= (1.0 + self.ZOOM_SPEED)
         elif scroll_y < 0:
@@ -25,18 +25,17 @@ class CameraController:
         self.zoom = max(self.MIN_ZOOM, min(self.zoom, self.MAX_ZOOM))
 
     def drag(self, dx: int, dy: int):
-        """Обробка перетягування мишею (Пан)."""
-        # position -= event.relative * (1.0 / zoom)
+        """Processes mouse drag events for panning."""
         scale_factor = 1.0 / self.zoom
         self.position.x -= dx * scale_factor
         self.position.y -= dy * scale_factor
 
     def update_arcade_camera(self, camera: arcade.Camera, window_width: int, window_height: int):
-        """Застосовує розраховані параметри до об'єкта arcade.Camera."""
+        """Applies the calculated zoom and position to the arcade.Camera object."""
         viewport_w = window_width / self.zoom
         viewport_h = window_height / self.zoom
         
-        # Центрування: розраховуємо лівий нижній кут
+        # Calculate the bottom-left corner of the viewport to center it on self.position.
         left = self.position.x - (viewport_w / 2)
         bottom = self.position.y - (viewport_h / 2)
         
@@ -48,7 +47,7 @@ class CameraController:
         )
 
     def screen_to_world(self, screen_x: float, screen_y: float, window_width: int, window_height: int) -> tuple[float, float]:
-        """Конвертує координати екрану в координати світу."""
+        """Converts screen-space mouse coordinates to absolute world-space coordinates."""
         viewport_w = window_width / self.zoom
         viewport_h = window_height / self.zoom
         

@@ -2,8 +2,7 @@ import arcade
 
 class GameView(arcade.View):
     """
-    Режим Гри (Gameplay Mode).
-    Тут буде відбуватися основний геймплей.
+    The main gameplay mode where the primary game logic and interaction occur.
     """
     def on_show_view(self):
         self.window.background_color = arcade.color.BLACK

@@ -4,13 +4,11 @@ from src.client.window import MainWindow
 def main():
     print("OpenPower starting...")
     
-    # Створюємо вікно
     window = MainWindow()
     
-    # Виконуємо початкове налаштування (яке запустить EditorView)
+    # The setup method initializes the default view (currently EditorView).
     window.setup()
     
-    # Запускаємо цикл Arcade
     arcade.run()
 
 if __name__ == "__main__":
