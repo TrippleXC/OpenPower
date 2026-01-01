@@ -1,16 +1,22 @@
 """
-Regions Map Generator.
+Map & Database Generator.
 
-This script processes Natural Earth vector data to create:
-1. A visual lookup map (PNG) where every region has a unique color.
-2. A database (CSV) mapping those HEX colors to region metadata.
+Architecture: "Color-As-ID"
+----------------------------
+1. Visual Map: Pixels represent region IDs.
+2. Database: Maps HEX colors (Visual IDs) to Game Data.
 
-The architecture uses "Color-As-ID":
-- The game logic reads the pixel color.
-- It converts that color to an Integer ID.
-- It looks up the ID in the CSV data.
+Features:
+- **Micro-Nation Merging**: Automatically fuses tiny subdivisions (e.g., Liechtenstein's 11 communes)
+  into single regions to prevent pixel collisions and improve gameplay UX.
+- **Data**: Extracts ISO codes, names, and calculates real surface area (km²).
+- **TSV Export**: Uses Tab-Separated Values for robust string handling.
+- **Smart Rescue**: Uses a spiral search algorithm with collision protection to ensure 
+  tiny islands are not overwritten by neighbors.
+- **Verification**: Mathematically proves map integrity before finishing.
 
-Data Source: https://www.naturalearthdata.com/downloads/10m-cultural-vectors/
+Dependencies:
+    pip install geopandas pandas rasterio numpy opencv-python unidecode pyproj
 """
 
 import os
@@ -18,53 +24,66 @@ import sys
 import csv
 import random
 import geopandas as gpd
-import rasterio
+import pandas as pd
 from rasterio import features
 from rasterio.transform import from_bounds, rowcol
 import numpy as np
-import cv2  # OpenCV used for high-performance image writing
-from unidecode import unidecode  # Essential for ASCII transliteration
+import cv2
+from unidecode import unidecode
 
 # === CONFIGURATION ===
 CONFIG = {
-    # Input Shapefile (Must have associated .shx and .dbf files)
-    "input_shp": "regions.shp",
+    # Input source (Requires .shp, .shx, .dbf)
+    "input_shp": "temp/regions.shp",
     
-    # Output Assets
-    "output_png": "world_regions_map.png",
-    "output_csv": "world_regions_data.csv",
+    # Outputs
+    "output_png": "temp/regions.png",
+    "output_tsv": "temp/regions.tsv",
     
-    # Texture Resolution (Higher = more detail, more RAM usage)
+    # Texture Resolution (10k is standard for detailed HOI4-style maps)
     "width": 10000,
     "height": 5000,
     
-    # WGS84 Global Bounds (Longitude -180 to 180, Latitude -90 to 90)
+    # WGS84 Global Bounds
     "bounds": (-180.0, -90.0, 180.0, 90.0),
     
-    # ID 0 (Black) is reserved for the Ocean/Background
-    "background_id": 0
+    # ID 0 is strictly reserved for Ocean/Background
+    "background_id": 0,
+    
+    # List of Country Codes (ISO A3) to force-merge into single regions.
+    # Why: In a global strategy game, having 11 tiny provinces for Liechtenstein 
+    # causes rendering errors and makes clicking impossible.
+    "merge_list": [
+        "LIE", # Liechtenstein
+        "SMR", # San Marino
+        "VAT", # Vatican
+        "MCO", # Monaco
+        "AND", # Andorra
+        "TUV", # Tuvalu
+        "NRU"  # Nauru
+    ]
 }
 
 def generate_random_colors(count):
     """
-    Generates a list of unique random RGB tuples.
+    Generates unique random RGB tuples.
     
     Why:
-        We cannot use mathematical ID generation (ID 1 = #000001) because
-        it produces near-black maps that are impossible for modders to edit.
-        Random distinct colors allow humans to edit the map in Paint.NET/Photoshop.
+        Random colors are essential for modding. Mathematical sequential IDs 
+        (like #000001, #000002) are visually indistinguishable to humans.
+        Random colors allow modders to pick regions easily in Paint.NET.
     """
     print(f"Generating {count} unique visual colors...")
     colors = set()
     result_list = []
     
     while len(result_list) < count:
-        # Avoid very dark colors to prevent confusion with the background (0,0,0)
         r = random.randint(10, 255)
         g = random.randint(10, 255)
         b = random.randint(10, 255)
         color = (r, g, b)
         
+        # Ensure we never generate Black (0,0,0) or duplicates
         if color not in colors and color != (0, 0, 0):
             colors.add(color)
             result_list.append(color)
@@ -77,164 +96,264 @@ def rgb_to_hex(r, g, b):
 
 def sanitize_text(text):
     """
-    Cleans text to ensure compatibility with game fonts and CSV readers.
+    Sanitizes string data for game engine compatibility.
     
-    1. Fixes 'Mojibake' (incorrect decoding of UTF-8 as Windows-1252).
-    2. Transliterates to ASCII (removes diacritics).
-       Example: 'München' -> 'Munchen', 'Bình' -> 'Binh'.
+    1. Fixes 'Mojibake' (Windows CP1252 vs UTF-8 encoding errors).
+    2. Transliterates to ASCII (removes diacritics) using unidecode.
     """
     if not isinstance(text, str):
-        return "Unknown"
+        return ""
     
-    # Step 1: Attempt to fix encoding errors common on Windows systems.
-    # Data often comes as UTF-8 but is read as CP1252.
+    # Step 1: Attempt to fix common Windows encoding corruption
     try:
-        # We encode back to CP1252 bytes, then decode correctly as UTF-8.
         fixed_text = text.encode('cp1252').decode('utf-8')
     except (UnicodeEncodeError, UnicodeDecodeError):
-        # If encoding fails, the text was likely correct (or unrecoverable).
         fixed_text = text
 
-    # Step 2: Transliterate to ASCII to support standard game fonts.
+    # Step 2: Enforce ASCII (e.g., "München" -> "Munchen")
     return unidecode(fixed_text).strip()
 
+def merge_micro_nations(gdf, codes_to_merge):
+    """
+    Combines all regions of specific countries into a single geometry.
+    
+    Why:
+        Fixes the "Liechtenstein Paradox" where excessive administrative divisions
+        in micro-nations are smaller than 1 pixel, causing validation failures.
+    """
+    print(f"Optimizing: Merging micro-nations {codes_to_merge}...")
+    
+    for code in codes_to_merge:
+        # Filter rows belonging to this country
+        subset = gdf[gdf['adm0_a3'] == code]
+        
+        if subset.empty or len(subset) <= 1:
+            continue # Skip if country missing or already has only 1 region
+            
+        print(f"  -> Merging {len(subset)} regions for {code}...")
+        
+        # 1. Fuse geometries into one polygon (Union)
+        # unary_union is efficient and handles MultiPolygons correctly
+        unified_geom = subset.geometry.unary_union
+        
+        # 2. Create a representative row
+        # We take metadata from the first region, but overwrite Name and Type
+        new_row = subset.iloc[0].copy()
+        new_row['geometry'] = unified_geom
+        
+        # Get country name (fallback to code if name missing)
+        c_name = subset.iloc[0].get('admin', code) 
+        new_row['name'] = c_name
+        new_row['name_en'] = c_name
+        new_row['type_en'] = "Sovereign State" # Reset local admin type
+        
+        # 3. Remove old rows from main DataFrame
+        gdf = gdf[gdf['adm0_a3'] != code]
+        
+        # 4. Append new unified row
+        # We must create a temporary GeoDataFrame to concatenate safely
+        new_gdf = gpd.GeoDataFrame([new_row], crs=gdf.crs)
+        gdf = pd.concat([gdf, new_gdf], ignore_index=True)
+        
+    return gdf
+
 def main():
-    print(f"--- Starting Final Map Generation ---")
+    print(f"--- Starting Ultimate Map Generation ---")
 
     # 1. Input Validation
     if not os.path.exists(CONFIG["input_shp"]):
-        print(f"ERROR: File {CONFIG['input_shp']} not found.")
+        print(f"ERROR: Input file {CONFIG['input_shp']} not found.")
         sys.exit(1)
 
     print("Reading Shapefile (Forcing UTF-8)...")
-    
-    # Force UTF-8 encoding. GeoPandas on Windows defaults to system encoding (CP1252),
-    # which corrupts Asian and European characters.
+    # GeoPandas often defaults to system encoding (CP1252 on Windows).
     try:
         gdf = gpd.read_file(CONFIG["input_shp"], encoding='utf-8')
-    except Exception as e:
-        print(f"Warning: Forced UTF-8 read failed ({e}). Falling back to auto-detect.")
+    except Exception:
+        print("Warning: Forced UTF-8 failed. Reverting to auto-detect.")
         gdf = gpd.read_file(CONFIG["input_shp"])
 
+    # 2. Optimization: Merge Micro-Nations
+    # This modifies the geometry before any processing happens.
+    gdf = merge_micro_nations(gdf, CONFIG['merge_list'])
+
     total_regions = len(gdf)
+
+    # 3. Physics Calculation: Real Area (km²)
+    print("Calculating real surface area (reprojecting to metric)...")
     
-    # 2. Color Assignment
-    # We assign a temporary integer ID to every region to handle rasterization.
-    # We will map this Integer -> Color later.
+    # Why: WGS84 (degrees) distorts size near poles.
+    # We reproject to 'Cylindrical Equal Area' to get fair gameplay values.
+    gdf_metric = gdf.to_crs({'proj': 'cea'})
+    
+    # Convert m² to km²
+    gdf['area_km2'] = (gdf_metric.geometry.area / 1e6).astype(int)
+
+    # 4. ID and Color Assignment
+    # We assign a temporary integer ID (1..N) to handle rasterization cleanly.
     gdf['temp_id'] = range(1, total_regions + 1)
     
     random_colors = generate_random_colors(total_regions)
-    
-    # Lookup Table: Temp_ID (int) -> Color (r, g, b)
-    # used to construct the final image.
     id_to_color_map = {i + 1: color for i, color in enumerate(random_colors)}
 
-    # Create the coordinate transformation matrix (Lat/Lon -> Pixel X/Y)
     transform = from_bounds(*CONFIG['bounds'], CONFIG['width'], CONFIG['height'])
+
+    # 5. Metadata Extraction & TSV Export
+    print("Processing metadata...")
     
-    # 3. Process Metadata & Build CSV
-    print("Processing metadata (Sanitizing names, calculating centroids)...")
+    tsv_rows = []
+    # Rich header for gameplay logic
+    tsv_header = [
+        "hex", "name", "owner", "iso_region", "type", 
+        "macro_region", "postal", "area_km2", "center_x", "center_y"
+    ]
+    tsv_rows.append(tsv_header)
     
-    csv_rows = []
-    # Header: HEX is used for modder convenience. Owner code determines initial gameplay state.
-    csv_header = ["hex", "name", "country_code", "center_x", "center_y"]
-    csv_rows.append(csv_header)
-    
-    # Dictionary to store centroids for the "island rescue" logic
     center_lookup = {}
     
     for _, row in gdf.iterrows():
         t_id = int(row['temp_id'])
         r, g, b = id_to_color_map[t_id]
         
-        # Calculate geometric center (for camera focus or labels)
+        # Calculate pixel centroid for camera focus
         geom = row.geometry
         center_geo = geom.centroid
         c_row, c_col = rowcol(transform, center_geo.x, center_geo.y)
         c_x = int(max(0, min(c_col, CONFIG['width'] - 1)))
         c_y = int(max(0, min(c_row, CONFIG['height'] - 1)))
 
-        # Metadata Extraction
-        # Priority: English Name > Local Name > Unknown
+        # Metadata extraction logic
         raw_name = row.get('name', 'Unknown')
         name_en = row.get('name_en', None)
         
+        # Prefer English name, fallback to Local name
         if name_en and isinstance(name_en, str) and len(name_en) > 1:
-            target_name = name_en
+            display_name = sanitize_text(name_en)
         else:
-            target_name = raw_name
+            display_name = sanitize_text(raw_name)
             
-        final_name = sanitize_text(target_name)
-        
-        # 'adm0_a3' is the standard ISO country code (e.g., UKR, USA).
-        country = row.get('adm0_a3', 'UNK').replace('-99', 'UNK')
-        
-        # Convert RGB to HEX for the CSV output
-        hex_color = rgb_to_hex(r, g, b)
+        owner_code = row.get('adm0_a3', 'UNK').replace('-99', 'UNK')
+        iso_reg = row.get('iso_3166_2', 'UNK') if isinstance(row.get('iso_3166_2'), str) else "UNK"
+        admin_type = sanitize_text(row.get('type_en', 'Region'))
+        macro_reg = sanitize_text(row.get('region', ''))
+        postal = sanitize_text(row.get('postal', ''))
+        area = int(row['area_km2'])
 
-        csv_rows.append([hex_color, final_name, country, c_x, c_y])
+        # UX: Use HEX strings so modders can copy-paste from Photoshop
+        hex_color = rgb_to_hex(r, g, b)
+        
+        tsv_rows.append([
+            hex_color, display_name, owner_code, iso_reg, 
+            admin_type, macro_reg, postal, area, c_x, c_y
+        ])
+        
         center_lookup[t_id] = (c_x, c_y)
 
-    print(f"Saving Database: {CONFIG['output_csv']}...")
-    # 'utf-8-sig' adds a BOM so Excel opens the file correctly without configuration.
-    with open(CONFIG["output_csv"], "w", encoding="utf-8-sig", newline='') as f:
-        writer = csv.writer(f)
-        writer.writerows(csv_rows)
+    print(f"Saving Database: {CONFIG['output_tsv']}...")
+    with open(CONFIG["output_tsv"], "w", encoding="utf-8-sig", newline='') as f:
+        # Delimiter '\t' makes it a TSV file
+        writer = csv.writer(f, delimiter='\t')
+        writer.writerows(tsv_rows)
 
-    # 4. Rasterization (Vector -> ID Map)
+    # 6. Rasterization
     print("Rasterizing geometry...")
-    
-    # Generator expression for memory efficiency
     shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf['temp_id']))
     
-    # Burn vectors into a numpy array of Integers.
-    # all_touched=False: Only pixels whose center is inside the polygon are drawn.
-    # This gives cleaner borders but can miss small islands.
     raster_ids = features.rasterize(
         shapes=shapes,
         out_shape=(CONFIG['height'], CONFIG['width']),
         transform=transform,
         fill=CONFIG['background_id'],
         dtype=np.uint32,
-        all_touched=False
+        all_touched=False # Clean borders
     )
 
-    # 5. Rescue Logic (Small Islands)
-    print("Checking for lost regions (small islands)...")
-    present_ids = np.unique(raster_ids)
+    # 7. Rescue Logic (Smart Spiral with Collision Protection)
+    print("Rescuing small regions (Smart Spiral)...")
     
-    # Find IDs that exist in the dataframe but not in the raster map
+    # Identify which regions failed to render
+    present_ids = np.unique(raster_ids)
     missing_ids = np.setdiff1d(gdf['temp_id'].values, present_ids)
     
     if len(missing_ids) > 0:
-        print(f"  -> Rescuing {len(missing_ids)} tiny regions...")
+        print(f"  -> Attempting to rescue {len(missing_ids)} regions...")
+        
+        # We must protect these missing IDs from overwriting EACH OTHER.
+        protected_ids = set(missing_ids)
+        placed_count = 0
+        
+        # Generator for spiral coordinates
+        def get_spiral(start_x, start_y, max_r):
+            yield start_x, start_y
+            for r in range(1, max_r + 1):
+                for dx in range(-r, r + 1):
+                    for dy in range(-r, r + 1):
+                        if abs(dx) == r or abs(dy) == r:
+                            yield start_x + dx, start_y + dy
+
         for m_id in missing_ids:
-            if m_id in center_lookup:
-                c_x, c_y = center_lookup[m_id]
-                # Force-draw the pixel at the centroid
-                # Note: numpy uses [y, x] indexing
-                raster_ids[c_y, c_x] = m_id
+            if m_id not in center_lookup:
+                continue
+            
+            c_x, c_y = center_lookup[m_id]
+            best_candidate = None
+            
+            # Increase radius to 30 to account for merged micro-nations if they are still small
+            for try_x, try_y in get_spiral(c_x, c_y, 30):
+                if not (0 <= try_x < CONFIG['width'] and 0 <= try_y < CONFIG['height']):
+                    continue
+                
+                current_pixel_val = raster_ids[try_y, try_x]
+                
+                # Priority 1: Water
+                if current_pixel_val == CONFIG['background_id']:
+                    best_candidate = (try_x, try_y)
+                    break 
+                
+                # Priority 2: Land (not protected)
+                if current_pixel_val not in protected_ids:
+                    if best_candidate is None:
+                        best_candidate = (try_x, try_y)
+            
+            if best_candidate:
+                final_x, final_y = best_candidate
+                raster_ids[final_y, final_x] = m_id
+                placed_count += 1
+            else:
+                print(f"CRITICAL: No space found for ID {m_id} near {c_x},{c_y}")
 
-    # 6. Image Generation (ID -> Visual Color)
+        print(f"  -> Rescue operation finished. Placed {placed_count}/{len(missing_ids)}.")
+
+    # 8. Integrity Verification
+    print("--- Verifying Integrity ---")
+    final_present_ids = np.unique(raster_ids)
+    expected_set = set(gdf['temp_id'].values)
+    found_set = set(final_present_ids)
+    lost_regions = expected_set - found_set
+    
+    if len(lost_regions) == 0:
+        print("SUCCESS: 100% Integrity. All regions are present on the map.")
+    else:
+        print(f"WARNING: Verification FAILED. {len(lost_regions)} regions are missing!")
+        print("\n--- MISSING REGIONS REPORT ---")
+        missing_info = gdf[gdf['temp_id'].isin(lost_regions)]
+        for _, row in missing_info.iterrows():
+            r_name = row.get('name_en', row.get('name', 'Unknown'))
+            r_country = row.get('adm0_a3', 'UNK')
+            print(f" -> ID {row['temp_id']}: {sanitize_text(r_name)} ({r_country})")
+
+    # 9. Image Encoding
     print("Encoding visual map...")
-    
-    # Create a palette for fast mapping: Index -> BGR Color
-    # Size = max ID + 2 padding to be safe
     palette = np.zeros((total_regions + 2, 3), dtype=np.uint8)
-    
     for t_id, (r, g, b) in id_to_color_map.items():
-        # OpenCV uses BGR order, not RGB!
-        palette[t_id] = [b, g, r]
+        palette[t_id] = [b, g, r] # BGR
 
-    # NumPy 'Fancy Indexing': Replaces every ID in the array with its color from the palette.
     bgr_image = palette[raster_ids]
     
-    # 7. Saving
-    print(f"Saving Map Image: {CONFIG['output_png']}...")
-    # Use compression 0 for maximum speed and to ensure lossless pixel values.
+    print(f"Saving PNG: {CONFIG['output_png']}...")
     cv2.imwrite(CONFIG["output_png"], bgr_image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
     
-    print("--- Success! Assets generated. ---")
+    print("--- Done! ---")
 
 if __name__ == "__main__":
     main()
