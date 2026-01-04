@@ -1,7 +1,7 @@
 arcade
 imgui-bundle
 esper
-sqlalchemy
+polars==1.36.1
 numpy
 opencv-python
 rtoml
