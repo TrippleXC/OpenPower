@@ -41,7 +41,7 @@ class EditorLayout:
         Displays details about the selected region.
         """
         # Set a fixed position/size for the first run, or let the user float it
-        imgui.set_next_window_size((300, 400), imgui.Cond.first_use_ever)
+        imgui.set_next_window_size((300, 400), imgui.Cond_.first_use_ever)
         
         if imgui.begin("Region Inspector"):
             if region_id is not None:
@@ -62,7 +62,7 @@ class EditorLayout:
 
     def _render_debug_info(self, fps: float):
         """Simple overlay for performance stats."""
-        bg_flags = imgui.WindowFlags.no_decoration | imgui.WindowFlags.always_auto_resize | imgui.WindowFlags.no_saved_settings | imgui.WindowFlags.no_focus_on_appearing | imgui.WindowFlags.no_nav
+        bg_flags = imgui.WindowFlags_.no_decoration | imgui.WindowFlags_.always_auto_resize | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_focus_on_appearing | imgui.WindowFlags_.no_nav
         
         # Position in top-right corner
         viewport = imgui.get_main_viewport()
@@ -73,7 +73,7 @@ class EditorLayout:
         pos = (work_pos.x + work_size.x - pad, work_pos.y + pad + 20) # +20 to avoid menu bar
         pivot = (1.0, 0.0)
         
-        imgui.set_next_window_pos(pos, imgui.Cond.always, pivot)
+        imgui.set_next_window_pos(pos, imgui.Cond_.always, pivot)
         imgui.set_next_window_bg_alpha(0.35)
         
         if imgui.begin("DebugOverlay", flags=bg_flags):

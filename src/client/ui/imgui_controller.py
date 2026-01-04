@@ -58,7 +58,7 @@ class ImGuiController:
         """
         imgui.render()
         draw_data = imgui.get_draw_data()
-        self.renderer.render_draw_data(draw_data)
+        self.renderer.render(draw_data)
 
     def on_mouse_motion(self, x: float, y: float, dx: float, dy: float):
         """
@@ -141,6 +141,7 @@ class ImGuiController:
         Creates a mapping from Arcade (Pyglet) keys to ImGui keys.
         Only essential keys for navigation and editing are mapped to keep overhead low.
         """
+        # Note: arcade.key.PRINT_SCREEN (with underscore) is the correct constant, not PRINTSCREEN.
         return {
             arcade.key.ESCAPE: imgui.Key.escape,
             arcade.key.ENTER: imgui.Key.enter,
@@ -159,7 +160,6 @@ class ImGuiController:
             arcade.key.CAPSLOCK: imgui.Key.caps_lock,
             arcade.key.SCROLLLOCK: imgui.Key.scroll_lock,
             arcade.key.NUMLOCK: imgui.Key.num_lock,
-            arcade.key.PRINTSCREEN: imgui.Key.print_screen,
             arcade.key.PAUSE: imgui.Key.pause,
             arcade.key.F1: imgui.Key.f1,
             arcade.key.F2: imgui.Key.f2,

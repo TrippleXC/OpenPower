@@ -42,6 +42,9 @@ class EditorView(arcade.View):
         # --- Editor State ---
         self.highlight_layer = arcade.SpriteList()
         self.selected_region_id = None
+        
+        # Track frame time manually for FPS calculation
+        self.last_frame_time = 0.016  # Default to ~60 FPS to avoid division by zero
 
     def setup(self):
         """
@@ -105,8 +108,8 @@ class EditorView(arcade.View):
         # 3. Render ImGui Interface
         # We delegate the layout logic to EditorLayout to keep the View clean.
         if self.editor_layout:
-             # Calculate FPS for debug overlay
-            fps = 1.0 / self.window.last_update_duration if self.window.last_update_duration > 0 else 60.0
+             # Calculate FPS for debug overlay using locally tracked time
+            fps = 1.0 / self.last_frame_time if self.last_frame_time > 0 else 60.0
             
             self.editor_layout.render(self.selected_region_id, fps)
 
@@ -115,6 +118,9 @@ class EditorView(arcade.View):
 
     def on_update(self, delta_time: float):
         """Game logic update."""
+        # Update our local frame time tracker
+        self.last_frame_time = delta_time
+        
         self.imgui_controller.update(delta_time)
 
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int):
