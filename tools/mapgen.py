@@ -351,7 +351,7 @@ def main():
     bgr_image = palette[raster_ids]
     
     print(f"Saving PNG: {CONFIG['output_png']}...")
-    cv2.imwrite(CONFIG["output_png"], bgr_image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+    cv2.imwrite(CONFIG["output_png"], bgr_image, [cv2.IMWRITE_PNG_COMPRESSION, 9])
     
     print("--- Done! ---")
 
