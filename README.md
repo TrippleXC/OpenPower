@@ -1,5 +1,10 @@
 # OpenPower: Technical Specification & Architecture
 
+> **⚠️ NOTE: Work in Progress**
+> This document describes the **target architecture** for version 1.0.
+> Not all features listed below (specifically networking and full modding support) are fully implemented yet.
+> Current status: **Single-player prototype phase.**
+
 **OpenPower** is a modular, data-driven grand strategy engine written in Python. It is designed as a modern, open-source spiritual successor to *SuperPower 2*.
 
 The engine moves away from traditional Object-Oriented Programming (OOP) and Entity-Component-Systems (ECS) in favor of **Data-Oriented Design (DOD)**. By leveraging **Polars**, the engine processes game state as massive in-memory tables, allowing for vectorized performance that rivals C++ engines while maintaining the moddability of Python.
@@ -18,61 +23,41 @@ The engine moves away from traditional Object-Oriented Programming (OOP) and Ent
 
 ---
 
-## 2. Project Structure
+## 2. Target Project Structure
 
-The project follows a **Composition over Inheritance** philosophy. Data (`state`) is strictly separated from Behavior (`pipeline`).
+The project follows a **Client-Server** architecture (even in single-player) and adheres to **Composition over Inheritance**.
 
 ```text
 OpenPower/
-├── .venv/                      # Virtual Environment
-├── mods.json                   # Load Order Configuration
-├── main.py                     # Application Entry Point
-├── cache/                      # Runtime fast-load cache
+├── modules/                  # --- CONTENT DATABASE ---
+│   └── base/
+│       ├── data/             # Human-readable Source (TSV, TOML)
+│       └── assets/           # Binary Assets (Textures, Audio)
 │
-├── modules/                    # --- GAMEPLAY CONTENT & LOGIC ---
-│   ├── base/
-│   │   ├── assets/             # Binary Media (Textures, Audio)
-│   │   │   └── map/
-│   │   │       └── regions.png # Color ID Map
-│   │   │
-│   │   ├── data/               # SOURCE DATA (Human Readable)
-│   │   │   ├── countries/      # TOML files (e.g., USA.toml)
-│   │   │   ├── map/
-│   │   │   │   └── regions.tsv # Static Region Definitions (ID, Terrain)
-│   │   │   └── scenarios/
-│   │   │       └── 2025/       # Scenario Data
-│   │   │           └── pop.tsv # Dynamic Population Data
-│   │   │
-│   │   └── logic/              # BEHAVIOR (Pure Python Functions)
-│   │       ├── economy.py      # def system_tax_income(state)
-│   │       ├── demography.py   # def system_growth(state)
-│   │       └── military.py
-│
-└── src/                        # --- ENGINE INFRASTRUCTURE ---
-    ├── server/
-    │   ├── state/              # [DATA LAYER]
-    │   │   ├── store.py        # GameState class (Dict of DataFrames)
-    │   │   └── schema.py       # Column type definitions
-    │   │
-    │   ├── io/                 # [INPUT/OUTPUT LAYER]
-    │   │   ├── loader.py       # TOML/TSV -> Polars DataFrame
-    │   │   ├── writer.py       # DataFrame -> .arrow (Save Game)
-    │   │   └── resources.py    # VFS (Virtual File System)
-    │   │
-    │   └── pipeline/           # [EXECUTION LAYER]
-    │       ├── runner.py       # Main Loop (Tick Orchestrator)
-    │       └── registry.py     # Auto-discovery of logic functions
+└── src/                      # --- SOURCE CODE ---
+    ├── shared/               # [PROTOCOL] Common definitions
+    │   ├── schema.py         # Polars DataFrame structures
+    │   └── actions.py        # Command Pattern (Action Definitions)
     │
-    └── client/                 # [VISUALIZATION LAYER]
-        ├── map_view.py         # Arcade Window & Shader Logic
-        ├── bridge.py           # Polars -> Numpy (Zero-copy GPU transfer)
-        └── ui/                 # ImGui Interface
+    ├── engine/               # [LOGIC] Pure Simulation Library
+    │   ├── systems/          # Stateless Logic Functions (Economy, War)
+    │   └── simulator.py      # Main Tick Function (State + Action -> NewState)
+    │
+    ├── server/               # [HOST] Game Session Management
+    │   ├── state.py          # GameState Container (Polars Store)
+    │   ├── io/               # Loader (TSV->DF) & Exporter (DF->TSV)
+    │   └── session.py        # Logic Orchestrator
+    │
+    └── client/               # [VIEW] Visualization Only
+        ├── network_client.py # Network Abstraction (Mock for now)
+        ├── renderers/        # Map & Unit Rendering
+        └── ui/               # ImGui Interface (Editor & Gameplay)
 
 ```
 
 ---
 
-## 3. Data Architecture (The "Compiler" Approach)
+## 3. Data Architecture: The "Compiler" Approach
 
 We treat game data as a compilation process: **Human Source -> Machine State**.
 
@@ -80,100 +65,55 @@ We treat game data as a compilation process: **Human Source -> Machine State**.
 
 Optimized for readability and version control (Git).
 
-1. **Entities (Countries, Units):** **TOML** (`rtoml`).
-* *Why:* Structured, hierarchical, supports comments.
-* *Example:* `ua.toml` defines budget, tags, and political structure.
-
-
-2. **Arrays (Regions, Population):** **TSV** (Tab-Separated Values).
-* *Why:* Easy to edit in Excel/Spreadsheets. Compact for 10,000+ rows.
-* *Example:* `regions.tsv` contains `id`, `terrain_id`, `owner_id`.
-
-
+* **Entities (Countries, Units):** **TOML**. Hierarchical data (e.g., `UKR.toml`).
+* **Arrays (Regions, Population):** **TSV**. Compact spreadsheet data for 10,000+ rows.
 
 ### B. Runtime: Polars DataFrames (For Logic)
 
 Optimized for SIMD vectorization and CPU cache locality.
 
-* **Initialization:** On launch, the `loader.py` reads all TOML/TSV files from all active mods.
-* **Compilation:** It converts them into `pl.DataFrame` objects stored in `GameState`.
-* **Indexing:** Data is processed by Columns, not Rows.
+* **Initialization:** `loader.py` compiles all module files into `GameState`.
+* **Indexing:** Data is processed by **Columns**, not Rows.
 
 ### C. Storage: Apache Arrow (For Speed)
 
-* **Save Game:** The engine dumps the in-memory DataFrames directly to disk using Polars IPC (`.arrow`).
-* **Speed:** Saving/Loading takes milliseconds because no parsing is required (memory dump).
+* **Save Game:** Direct memory dump of DataFrames to disk (`.arrow`).
+* **Speed:** Instant Save/Load (zero parsing required).
 
 ---
 
-## 4. Logic & Modding (The Pipeline)
+## 4. Networking & Logic Flow (Command Pattern)
 
-Instead of "Systems" in an ECS that loop over entities, we use **Pipeline Functions** that transform tables.
+> **Status:** Networking is currently **not implemented**. The architecture is designed to support it seamlessly in the future via the `Action` system.
 
-### Composition via Joins
+The Logic (`engine`) is strictly separated from the View (`client`) via a **Command Pattern**.
 
-Logic is composed by joining tables. If a mod adds "Radiation", it does not modify the `Region` class. It simply adds a `radiation` table and joins it during calculation.
-
-**Example System (`modules/base/logic/economy.py`):**
+1. **Client:** The user clicks "Raise Taxes". The client **does not** change the data. Instead, it sends an `ActionSetTax` object to the Server.
+2. **Server:** Receives the Action, validates it, and pushes it to the Engine.
+3. **Engine:** In the next tick, the Engine applies the Action to the `GameState` using pure functions.
+4. **Sync:** The updated `GameState` (or delta) is sent back to the Client for rendering.
 
 ```python
-import polars as pl
-
-def system_calculate_taxes(state):
-    # 1. Access Tables
-    regions = state.get_table("regions")
-    countries = state.get_table("countries")
-
-    # 2. Vectorized Aggregation (No Python Loops!)
-    # SQL equivalent: SELECT owner_id, SUM(pop * tax) ... GROUP BY owner_id
-    income_agg = (
-        regions
-        .group_by("owner_id")
-        .agg((pl.col("population") * 0.1).sum().alias("tax_income"))
-    )
-
-    # 3. Update State via Join
-    state.tables["countries"] = (
-        countries
-        .join(income_agg, left_on="id", right_on="owner_id", how="left")
-        .with_columns(
-            (pl.col("budget") + pl.col("tax_income").fill_null(0)).alias("budget")
-        )
-        .drop("tax_income")
-    )
+# Conceptual Example of an Action
+@dataclass
+class ActionSetTax(GameAction):
+    country_tag: str
+    new_rate: float
 
 ```
 
 ---
 
-## 5. Rendering Pipeline (Zero-Copy)
-
-Rendering is decoupled from simulation. The visual layer reads the DataFrames and converts them to GPU buffers without iterating in Python.
-
-1. **Map Layer:**
-* `regions.png` provides the geometry (Color ID map).
-* A Fragment Shader looks up the pixel color.
-* **The Bridge:** `client/bridge.py` extracts the `owner_id` column from the `regions` DataFrame, converts it to a `numpy` array (zero-copy), and uploads it to a Texture Buffer (TBO).
-* The Shader uses the TBO to color the region based on the owner's color.
-
-
-2. **UI Layer:**
-* ImGUI bundle reads directly from Polars DataFrames to render tables and inspector windows.
-
-
-
----
-
-## 6. Development Workflow
+## 5. Development Workflow
 
 1. **Setup:** `pip install -r requirements.txt`.
 2. **Run Game:** `python main.py`.
-3. **Edit Map:**
-* Open `modules/base/data/map/regions.tsv` in **LibreOffice or something else**.
-* Change terrain/ownership.
-* Restart game.
+3. **Edit Map (Data-Driven):**
+* Open `modules/base/data/map/regions.tsv` in Excel/LibreOffice.
+* Change terrain, owner, or population.
+* Restart the game (or reload via Editor).
 
 
-4. **Create Mod:**
-* Create `modules/my_mod/data/countries/NCR.toml`.
-* The engine automatically detects, loads, and merges it into the `countries` DataFrame.
+4. **Editor Mode:**
+* In-game Editor allows modifying DataFrames visually.
+* Changes are written back to `.tsv` files via `server.io.exporter`.
