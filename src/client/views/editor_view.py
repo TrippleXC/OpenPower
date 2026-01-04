@@ -8,7 +8,7 @@ from src.client.ui.editor_layout import EditorLayout
 
 # Define paths relative to the project root for portability.
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-MAP_PATH = PROJECT_ROOT / "modules" / "base" / "data" / "regions.png"
+MAP_PATH = PROJECT_ROOT / "modules" / "base" / "data" / "regions" / "regions.png"
 CACHE_DIR = PROJECT_ROOT / ".cache"
 
 class EditorView(arcade.View):
