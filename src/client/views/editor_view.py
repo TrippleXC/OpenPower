@@ -89,8 +89,14 @@ class EditorView(arcade.View):
 
     def on_draw(self):
         """Render the screen."""
-        self.clear()
+        # --- RESIZE FIX ---
+        # If on_draw is called without a preceding on_update (e.g. during Win32 window resize),
+        # ImGui won't have a new frame context. We detect this and force a frame start.
+        if not self.imgui_controller.frame_in_progress:
+            self.imgui_controller.update(1.0 / 60.0)
         
+        self.clear()
+
         # 1. Render World Layer
         # Activate the camera that handles zoom/pan
         self.world_camera.use()

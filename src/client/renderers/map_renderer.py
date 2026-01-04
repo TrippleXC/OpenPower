@@ -71,38 +71,44 @@ class MapRenderer:
     def create_highlight_sprite(self, region_ids: List[int], color: Tuple[int, int, int] = (255, 255, 0)) -> Optional[arcade.Sprite]:
         """
         Generates a transparent Arcade Sprite containing only the borders of the specified regions.
-        Useful for selection highlighting.
         """
         if not region_ids:
             return None
 
-        # 1. Ask Atlas to generate the contour image (returns BGRA numpy array)
-        overlay_data = self.atlas.render_country_overlay(region_ids, border_color=color, thickness=3)
+        # 1. Get optimized overlay data (Cropped image + Offsets)
+        # Returns: (small_image, x_offset_in_atlas, y_offset_in_atlas)
+        overlay_data, x_off, y_off = self.atlas.render_country_overlay(region_ids, border_color=color, thickness=3)
+
+        if overlay_data is None:
+            return None
 
         # 2. Convert BGRA (OpenCV) to RGBA (PIL/Arcade)
-        # OpenCV uses BGR, Arcade/PIL uses RGB. 
-        # The alpha channel is already correct, but R and B need swapping.
         overlay_rgba = cv2.cvtColor(overlay_data, cv2.COLOR_BGRA2RGBA)
 
         # 3. Create PIL Image
         image = Image.fromarray(overlay_rgba)
 
         # 4. Create Texture and Sprite
-        # We use a hash of IDs to name the texture effectively if we wanted to cache it,
-        # but for dynamic editor selection, a unique name is fine.
         texture_name = f"highlight_{region_ids[0]}_{id(region_ids)}"
-        
-        # Fixed (Turn 1): Arcade 3.0 Texture constructor expects 'image' as positional arg and 'hash' as keyword.
         texture = arcade.Texture(image, hash=texture_name)
         
-        # Fixed (Turn 2): Pass texture as a POSITIONAL argument to avoid "multiple values" error.
-        # Calling arcade.Sprite(texture=texture) causes a conflict with the first positional arg (filename).
         sprite = arcade.Sprite(texture)
         
-        # 5. Position Sprite
-        # Since the overlay is the size of the whole map, we center it exactly like the map sprite.
-        sprite.center_x = self.width / 2
-        sprite.center_y = self.height / 2
+        # 5. Position Sprite Correctly
+        # We need to calculate where the center of this small sprite is in the World.
+        
+        # Dimensions of the small cropped image
+        small_h, small_w = overlay_data.shape[:2]
+        
+        # Center in Image Coordinates (Top-Left origin)
+        # The sprite starts at (x_off, y_off) in the big map
+        center_img_x = x_off + small_w / 2
+        center_img_y = y_off + small_h / 2
+        
+        # Convert to Arcade World Coordinates (Bottom-Left origin)
+        # Flip Y: world_y = height - img_y
+        sprite.center_x = center_img_x
+        sprite.center_y = self.height - center_img_y
         
         return sprite
 

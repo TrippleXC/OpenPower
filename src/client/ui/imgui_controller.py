@@ -40,25 +40,36 @@ class ImGuiController:
         # Example:
         # self._load_fonts()
 
+        self.frame_in_progress = False
+
     def update(self, delta_time: float):
         """
         Prepares a new ImGui frame.
-        Must be called before any imgui.* widget calls in the update/draw loop.
         """
-        # ImGui needs to know the window size and time delta to animate widgets properly.
+        if self.frame_in_progress:
+            # If update is called twice without render (rare, but possible), 
+            # we typically shouldn't call new_frame() again or we call render() first.
+            # For simplicity in this loop, we assume standard usage.
+            imgui.end_frame() 
+        
         self.io.display_size = (self.window.width, self.window.height)
         self.io.delta_time = delta_time
         
         imgui.new_frame()
+        self.frame_in_progress = True
 
     def render(self):
         """
         Finalizes the frame and issues draw calls to OpenGL.
-        Must be called at the very end of the window.on_draw() method.
         """
+        if not self.frame_in_progress:
+            return
+
         imgui.render()
         draw_data = imgui.get_draw_data()
         self.renderer.render(draw_data)
+        
+        self.frame_in_progress = False
 
     def on_mouse_motion(self, x: float, y: float, dx: float, dy: float):
         """

@@ -177,38 +177,63 @@ class RegionAtlas:
     def render_country_overlay(self, 
                              region_ids: List[int], 
                              border_color: Tuple[int, int, int] = (255, 255, 255),
-                             thickness: int = 3) -> np.ndarray:
+                             thickness: int = 3) -> Tuple[Optional[np.ndarray], int, int]:
         """
-        Generates a transparent image (BGRA) containing only the border of the merged country.
+        Generates a small overlay image cropped to the region's bounding box.
         
-        Args:
-            region_ids: List of region IDs to merge.
-            border_color: RGB tuple for the border line.
-            thickness: Thickness of the border line.
-            
         Returns:
-            np.ndarray: An image array of shape (H, W, 4) - BGRA format.
+            Tuple: (image_data, x_offset, y_offset)
         """
-        # 1. Get merged boolean mask
-        mask_bool = self.get_country_mask(region_ids)
-        
-        # 2. Convert to uint8 for OpenCV (0 or 255)
-        mask_uint8 = mask_bool.astype(np.uint8) * 255
-        
-        # 3. Find outer contours of the *combined* shape
+        if not region_ids:
+            return None, 0, 0
+
+        # 1. Find Bounding Box (Optimization: Work only on relevant pixels)
+        # Using np.where on the full map is still the heaviest part, but much faster 
+        # than allocating a full-size image later.
+        if len(region_ids) == 1:
+            ys, xs = np.where(self.packed_map == region_ids[0])
+        else:
+            ys, xs = np.where(np.isin(self.packed_map, region_ids))
+
+        if len(xs) == 0:
+            return None, 0, 0
+
+        # Calculate bounds with padding for the border thickness
+        pad = thickness + 2
+        x_min, x_max = np.min(xs), np.max(xs)
+        y_min, y_max = np.min(ys), np.max(ys)
+
+        # Clamp to map dimensions
+        x_min = max(0, x_min - pad)
+        y_min = max(0, y_min - pad)
+        x_max = min(self.width, x_max + pad)
+        y_max = min(self.height, y_max + pad)
+
+        w = x_max - x_min
+        h = y_max - y_min
+
+        # 2. Crop the map to the Region of Interest (ROI)
+        roi = self.packed_map[y_min:y_max, x_min:x_max]
+
+        # 3. Create Mask on ROI (Fast)
+        if len(region_ids) == 1:
+            mask = (roi == region_ids[0])
+        else:
+            mask = np.isin(roi, region_ids)
+            
+        mask_uint8 = mask.astype(np.uint8) * 255
+
+        # 4. Find Contours on ROI
         contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        # 4. Draw contours onto a blank transparent image
-        # Create zero array (Height, Width, 4 channels)
-        overlay = np.zeros((self.height, self.width, 4), dtype=np.uint8)
-        
-        # Convert RGB input to BGR for OpenCV
+
+        # 5. Draw on small ROI image
+        overlay = np.zeros((h, w, 4), dtype=np.uint8)
         bgr_color = (border_color[2], border_color[1], border_color[0])
         
-        # Draw (color + alpha=255)
         cv2.drawContours(overlay, contours, -1, bgr_color + (255,), thickness)
-        
-        return overlay
+
+        # Return the small image AND its top-left position in the main map
+        return overlay, x_min, y_min
 
 # =========================================================================
 # EXAMPLE USAGE
