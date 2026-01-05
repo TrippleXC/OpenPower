@@ -3,7 +3,7 @@ from pyglet.math import Vec2
 
 from src.server.session import GameSession
 from src.shared.config import GameConfig
-from src.client.network_client import NetworkClient
+from client.services.network_client_service import NetworkClient
 from src.client.renderers.map_renderer import MapRenderer
 from src.client.ui.editor_layout import EditorLayout
 from src.client.services.imgui_service import ImGuiService

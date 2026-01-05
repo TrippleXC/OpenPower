@@ -1,7 +1,7 @@
 from imgui_bundle import imgui
 import polars as pl
 from typing import Optional, Callable
-from src.client.network_client import NetworkClient
+from client.services.network_client_service import NetworkClient
 
 class EditorLayout:
     """
