@@ -83,7 +83,7 @@ class EditorView(arcade.View):
         self.highlight_layer.draw()
         
         # 3. Render UI Layer (Identity Transform)
-        self.ui_camera.use()
+        #self.ui_camera.use()
         self.ui_layout.render(self.selected_region_int_id, 1.0/60.0)
         self.imgui_controller.render()
 

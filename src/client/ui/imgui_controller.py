@@ -53,6 +53,10 @@ class ImGuiController:
             imgui.end_frame() 
         
         self.io.display_size = (self.window.width, self.window.height)
+        
+        pixel_ratio = self.window.get_pixel_ratio()
+        self.io.display_framebuffer_scale = (pixel_ratio, pixel_ratio)
+        
         self.io.delta_time = delta_time
         
         imgui.new_frame()
