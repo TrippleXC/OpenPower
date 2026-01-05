@@ -6,25 +6,32 @@ class NetworkClient:
     """
     The Bridge between the Client View (UI) and the Server Session.
     
-    Architecture:
-        Currently, this is a 'Mock' client that holds a direct reference 
-        to the local GameSession instance.
+    Architecture (Service Pattern):
+        This component isolates the 'Network' logic. 
+        Currently, it mocks a network connection by holding a direct reference 
+        to the local GameSession.
         
-        To add Multiplayer later:
-        1. Create a 'RemoteNetworkClient' class.
-        2. Replace 'self.session.receive_action()' with 'socket.send()'.
-        3. The rest of the game code (Views, Renderers) won't notice the difference.
+        Future Refactoring for Multiplayer:
+        1. Create a `RemoteNetworkClient` implementing the same methods.
+        2. Replace `self.session.receive_action()` with `socket.send()`.
+        3. The Editor/GameView won't need any changes.
     """
+    
     def __init__(self, session: GameSession):
         self.session = session
-        self.player_id = "local_admin" # Default ID for single-player/editor
+        # Default ID for single-player/editor mode.
+        # In a real game, this would be assigned by the server upon handshake.
+        self.player_id = "local_admin" 
 
     def send_action(self, action: GameAction):
         """
         Sends an intent to the server.
-        The client does NOT apply the action locally; it waits for the server to sync state.
+        
+        Note: The client does NOT apply the action locally immediately.
+        It waits for the server to process it and return the new state.
+        This is 'Authoritative Server' architecture.
         """
-        # Ensure the action is tagged with our ID
+        # Tag the action so the server knows who sent it
         action.player_id = self.player_id
         self.session.receive_action(action)
 
@@ -32,11 +39,13 @@ class NetworkClient:
         """
         Fetches the latest world state for rendering.
         """
+        # In a real network scenario, this might return the last received snapshot
+        # rather than querying the session directly.
         return self.session.get_state_snapshot()
 
     def request_save(self):
         """
-        Editor-specific command to save changes to disk.
+        Editor-specific command to flush changes to disk.
         """
         print("[NetworkClient] Requesting server to save map data...")
         self.session.save_map_changes()
