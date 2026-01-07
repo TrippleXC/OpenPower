@@ -1,4 +1,4 @@
-import json
+import rtoml
 import importlib.util
 import sys
 from pathlib import Path
@@ -45,22 +45,13 @@ class ModManager:
         for mod_dir in self.modules_dir.iterdir():
             if not mod_dir.is_dir(): continue
             
-            # Check for mod.toml or mod.json
             manifest_path = mod_dir / "mod.toml"
-            is_toml = True
-            if not manifest_path.exists():
-                manifest_path = mod_dir / "mod.json"
-                is_toml = False
 
             if manifest_path.exists():
                 try:
-                    if is_toml:
-                        import rtoml
-                        with open(manifest_path, "r", encoding="utf-8") as f:
-                            data = rtoml.load(f)
-                    else:
-                        with open(manifest_path, "r", encoding="utf-8") as f:
-                            data = json.load(f)
+                    
+                    with open(manifest_path, "r", encoding="utf-8") as f:
+                        data = rtoml.load(f)
                             
                     manifest = ModManifest(
                         id=data.get("id", mod_dir.name),
