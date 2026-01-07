@@ -40,4 +40,4 @@ class UITheme:
         style.set_color_(imgui.Col_.button_active, self.button_active)
 
 # Pre-defined SP2 Style Instance
-SP2_THEME = UITheme()
+GAMETHEME = UITheme()

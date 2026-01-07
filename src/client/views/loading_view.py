@@ -3,7 +3,7 @@ import threading
 from typing import Callable, Any
 from src.client.services.imgui_service import ImGuiService
 from src.client.ui.composer import UIComposer
-from src.client.ui.theme import SP2_THEME
+from src.client.ui.theme import GAMETHEME
 from src.client.interfaces.loading_task import LoadingTask
 
 class LoadingView(arcade.View):
@@ -22,7 +22,7 @@ class LoadingView(arcade.View):
         self.on_failure = on_failure
         
         self.imgui = ImGuiService(self.window)
-        self.ui = UIComposer(SP2_THEME)
+        self.ui = UIComposer(GAMETHEME)
         
         # Threading Logic
         self.thread = threading.Thread(target=self._worker, daemon=True)

@@ -2,7 +2,7 @@ import arcade
 import sys
 from src.client.services.imgui_service import ImGuiService
 from src.client.ui.composer import UIComposer
-from src.client.ui.theme import SP2_THEME
+from src.client.ui.theme import GAMETHEME
 from src.shared.config import GameConfig
 from src.server.session import GameSession
 
@@ -22,7 +22,7 @@ class MainMenuView(arcade.View):
         
         # Services
         self.imgui = ImGuiService(self.window)
-        self.ui = UIComposer(SP2_THEME)
+        self.ui = UIComposer(GAMETHEME)
 
     def on_show_view(self):
         print("[MainMenuView] Entered Main Menu")
