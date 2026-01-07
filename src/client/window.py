@@ -2,6 +2,7 @@ import arcade
 from src.server.session import GameSession
 from src.shared.config import GameConfig
 from src.client.views.editor_view import EditorView
+from src.client.views.main_menu_view import MainMenuView
 
 class MainWindow(arcade.Window):
     """
@@ -24,7 +25,8 @@ class MainWindow(arcade.Window):
 
     def setup(self):
         print("[Window] Initializing...")
-        start_view = EditorView(self.session, self.game_config)
+        #start_view = EditorView(self.session, self.game_config)
+        start_view = MainMenuView(self.session, self.game_config)
         self.show_view(start_view)
         
     def on_resize(self, width: float, height: float):
