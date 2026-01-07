@@ -24,10 +24,6 @@ class EditorView(arcade.View):
         super().__init__()
         self.game_config = config
         
-        # Interaction State
-        self.is_panning_map = False
-        self.background_color = arcade.color.DARK_SLATE_GRAY
-        
         # --- 1. Composition: Logic Components ---
         # We use the pre-loaded network client connected to the session
         self.net = context.net_client
@@ -40,12 +36,7 @@ class EditorView(arcade.View):
         self.ui_layout.on_focus_request = self.focus_on_coordinates
         
         # --- 3. Composition: Visual Components ---
-        # Validation
-        if not context.map_path.exists():
-             print(f"[EditorView] CRITICAL: Map path from context invalid: {context.map_path}")
-
         # Initialize Renderer using the PRE-LOADED Atlas (CPU work already done).
-        # We pass both the map path (logic/overlay) and terrain path (background).
         self.map_renderer = MapRenderer(
             map_path=context.map_path, 
             terrain_path=context.terrain_path,
@@ -56,12 +47,16 @@ class EditorView(arcade.View):
         # --- 4. Composition: Camera System ---
         self.world_camera = arcade.Camera2D()
         
+        # Center camera on map
         center_pos = self.map_renderer.get_center()
         self.camera_controller = CameraController(center_pos)
         
         # --- 5. Selection State ---
         self.selected_region_int_id = None
         self.highlight_layer = arcade.SpriteList()
+        
+        # Interaction Flags
+        self.is_panning_map = False
 
     def on_resize(self, width: int, height: int):
         """Handle window resize for both UI and World Camera."""
@@ -71,6 +66,58 @@ class EditorView(arcade.View):
     def on_show_view(self):
         """Called when the view becomes active."""
         self.camera_controller.update_arcade_camera(self.world_camera)
+        
+        # --- CRITICAL: Generate Political Layer ---
+        # On startup, we fetch the country data and tell the renderer to paint the political map.
+        self._refresh_political_data()
+
+    def _refresh_political_data(self):
+        """
+        Fetches 'Regions' table and procedurally generates country colors 
+        based on the 'owner' tag. (Temporary fix until countries.csv exists).
+        """
+        import hashlib # Used for generating colors from strings
+        
+        state = self.net.get_state()
+        regions_df = state.get_table("regions")
+        
+        if regions_df.is_empty():
+            print("[EditorView] Warning: Regions table is empty.")
+            return
+
+        if "owner" not in regions_df.columns:
+            print("[EditorView] CRITICAL: 'owner' column missing in Regions table.")
+            return
+
+        # 1. Build Region Map {id: owner}
+        # Polars Zip is fast
+        region_map = dict(zip(regions_df["id"], regions_df["owner"]))
+        
+        # 2. Generate Temporary Colors for every unique Owner found
+        # We use unique() to find all tags currently on the map (e.g., "UKR", "GER", "USA")
+        unique_owners = regions_df["owner"].unique().to_list()
+        
+        color_map = {}
+        for tag in unique_owners:
+            if not tag or tag == "None": 
+                # Transparent/Gray for unowned
+                color_map[tag] = (0, 0, 0)
+                continue
+            
+            # GENERATE COLOR: Hash the tag name to get 3 consistent bytes
+            # This ensures "UKR" is always the same color, even after restart.
+            hash_bytes = hashlib.md5(str(tag).encode('utf-8')).digest()
+            
+            # Use the first 3 bytes as RGB
+            r = hash_bytes[0]
+            g = hash_bytes[1]
+            b = hash_bytes[2]
+            
+            color_map[tag] = (r, g, b)
+            
+        # 3. Send to Renderer
+        # The atlas will now color regions based on these generated colors
+        self.map_renderer.update_political_layer(region_map, color_map)
 
     def on_draw(self):
         """
@@ -85,21 +132,23 @@ class EditorView(arcade.View):
         self.world_camera.use()
         
         # --- DRAW MAP WITH SELECTED MODE ---
-        # We read the current mode directly from the UI Layout state.
-        current_mode = self.ui_layout.map_mode
-        self.map_renderer.draw_map(mode=current_mode)
+        # Get the internal mode string ("terrain" or "political") from UI Layout
+        render_mode = self.ui_layout.get_current_render_mode()
+        self.map_renderer.draw_map(mode=render_mode)
         
         # Draw selection highlight (Always on top, normal blending)
         self.highlight_layer.draw()
         
-        # 3. UI Generation
+        # 3. UI Generation (Pass selection ID so Inspector knows what to show)
         self.ui_layout.render(self.selected_region_int_id, self.imgui.io.framerate)
 
         # 4. UI Render
         self.window.use() 
         self.imgui.render()
 
-    # --- Input Delegation ---
+    # =========================================================================
+    # Input Delegation
+    # =========================================================================
 
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int):
         # 1. Pass to ImGui first
@@ -174,13 +223,15 @@ class EditorView(arcade.View):
             if highlight_sprite:
                 self.highlight_layer.append(highlight_sprite)
         else:
+            # Clicked on ocean/nothing
             self.selected_region_int_id = None
             self.highlight_layer.clear()
 
     def focus_on_coordinates(self, x: float, y: float):
         """Callback for UI list items to jump camera."""
-        # Note: Atlas Y is Top-Left, World Y is Bottom-Left. 
-        # The region coordinates in the DB (x,y) are usually stored as Image coordinates.
+        # Note: Atlas Y is usually Top-Left (Image space), World Y is Bottom-Left (OpenGL space). 
+        # The region coordinates in the DB (x,y) are usually stored as Image coordinates from processing.
+        # We must invert Y to match the World Camera.
         world_y = self.map_renderer.height - y
         self.camera_controller.jump_to(x, world_y)
         self.camera_controller.update_arcade_camera(self.world_camera)

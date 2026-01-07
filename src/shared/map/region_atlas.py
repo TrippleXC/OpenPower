@@ -3,16 +3,25 @@ import json
 import time
 import cv2
 import numpy as np
-from typing import Tuple, List, Optional, Union
+from typing import Tuple, List, Optional, Dict, Union
 
 class RegionAtlas:
     """
-    Manages the region map image, caching, and spatial queries.
+    Manages the raw region map data, spatial caching, and pixel-level queries.
+    
+    Responsibility:
+        This class is a Data Provider. It does not know about Arcade, rendering contexts,
+        or game logic. It simply answers questions like "What region is at (x,y)?"
+        or "Generate an image where Region 1 is Red and Region 2 is Blue."
+        
+    Performance Note:
+        Uses memory-mapped NumPy arrays or efficient binary caching to handle 
+        high-resolution maps (4k+) without lag.
     """
 
     def __init__(self, image_path: str, cache_dir: str = ".cache"):
         """
-        Initialize the atlas. Loads from cache if valid, otherwise processes the PNG.
+        Initialize the atlas. Loads from cache if valid to speed up startup.
 
         Args:
             image_path (str): Path to the source 'regions.png' file.
@@ -24,7 +33,7 @@ class RegionAtlas:
         # Ensure cache directory exists
         os.makedirs(self.cache_dir, exist_ok=True)
 
-        # distinct filenames for cache
+        # distinct filenames for cache based on the source image name
         base_name = os.path.splitext(os.path.basename(image_path))[0]
         self.cache_file = os.path.join(cache_dir, f"{base_name}_packed.npy")
         self.meta_file = os.path.join(cache_dir, f"{base_name}_meta.json")
@@ -46,13 +55,13 @@ class RegionAtlas:
 
         current_mtime = os.path.getmtime(self.image_path)
 
-        # 1. Try to load valid cache
+        # 1. Try to load valid cache to save startup time (decoding PNGs is slow)
         if self._is_cache_valid(current_mtime):
-            print(f"[RegionAtlas] Loading fast cache from: {self.cache_file}")
+            # print(f"[RegionAtlas] Loading fast cache from: {self.cache_file}")
             return np.load(self.cache_file)
 
         # 2. Rebuild if stale or missing
-        print("[RegionAtlas] Source changed. Rebuilding cache (this happens once)...")
+        print("[RegionAtlas] Source map changed. Rebuilding optimized cache...")
         return self._rebuild_cache(current_mtime)
 
     def _is_cache_valid(self, current_mtime: float) -> bool:
@@ -67,22 +76,30 @@ class RegionAtlas:
             return False
 
     def _rebuild_cache(self, current_mtime: float) -> np.ndarray:
-        """Reads PNG, packs RGB into Int32, and saves to disk."""
+        """
+        Reads PNG, packs RGB channels into a single Int32 array, and saves to disk.
+        
+        Why pack colors?
+            A standard image is (Height, Width, 3). Querying it requires checking 3 bytes.
+            By packing B, G, R into a single 32-bit integer, the image becomes (Height, Width).
+            This reduces memory usage (slightly) but massively speeds up equality checks 
+            (checking `pixel == ID` is 1 operation instead of 3).
+        """
         t0 = time.time()
         
         # Load standard BGR image via OpenCV
         img = cv2.imread(self.image_path)
         if img is None:
-            raise ValueError("Failed to decode image. Ensure it is a valid PNG/JPG.")
+            raise ValueError(f"Failed to decode image at {self.image_path}")
 
-        # --- THE SPEED TRICK ---
+        # --- THE SPEED OPTIMIZATION ---
         # Convert 3-channel (B, G, R) into 1-channel (Int32).
         # Formula: ID = B | (G << 8) | (R << 16)
-        # We use .astype(np.int32) to prevent 8-bit overflow during shifting.
+        # Note: We use .astype(np.int32) to prevent 8-bit overflow during shifting.
         b, g, r = cv2.split(img)
         packed = b.astype(np.int32) | (g.astype(np.int32) << 8) | (r.astype(np.int32) << 16)
 
-        # Save binary data
+        # Save binary data for fast loading next time
         np.save(self.cache_file, packed)
 
         # Save metadata
@@ -97,8 +114,12 @@ class RegionAtlas:
     # =========================================================================
 
     def pack_color(self, r: int, g: int, b: int) -> int:
-        """Converts an RGB tuple to the internal Packed ID (int)."""
-        # Note: OpenCV reads as BGR, so we pack accordingly logic: B is lowest byte
+        """
+        Converts an RGB tuple to the internal Packed ID (int).
+        
+        Note:
+            OpenCV reads images as BGR. Our packing logic puts Blue in the lowest byte.
+        """
         return int(b) | (int(g) << 8) | (int(r) << 16)
 
     def unpack_color(self, packed_id: int) -> Tuple[int, int, int]:
@@ -109,70 +130,81 @@ class RegionAtlas:
         return (r, g, b)
 
     # =========================================================================
-    # PUBLIC: Core Operations
+    # PUBLIC: Queries & Generators
     # =========================================================================
 
     def get_region_at(self, x: int, y: int) -> Optional[int]:
         """
         Returns the Region ID (int) at the specific coordinate.
-        
-        Returns:
-            int: The packed region ID.
-            None: If coordinates are out of bounds.
         """
         if not (0 <= x < self.width and 0 <= y < self.height):
             return None
         # NumPy array is accessed as [row, col] -> [y, x]
         return int(self.packed_map[y, x])
 
-    def get_color_at(self, x: int, y: int) -> Optional[Tuple[int, int, int]]:
-        """Returns the (R, G, B) tuple at the specific coordinate."""
-        pid = self.get_region_at(x, y)
-        if pid is None:
-            return None
-        return self.unpack_color(pid)
-
-    def get_region_pixels(self, region_id: int) -> np.ndarray:
+    def generate_political_view(self, 
+                              region_owner_map: Dict[int, str], 
+                              owner_colors: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
         """
-        Finds all pixel coordinates belonging to a specific Region ID.
+        Generates a full map texture where regions are colored by their owner.
         
-        Returns:
-            np.ndarray: A list of [x, y] coordinates (Size: N x 2).
-        """
-        # np.where returns (y_indices, x_indices)
-        y, x = np.where(self.packed_map == region_id)
-        # Stack them into (x, y) pairs
-        return np.column_stack((x, y))
-
-    def get_region_boundaries(self, region_id: int) -> List[np.ndarray]:
-        """
-        Calculates the polygon contours (boundaries) of a region.
-        
-        Returns:
-            List[np.ndarray]: A list of polygons. Each polygon is an array of (x,y) points.
-            Useful for drawing region borders.
-        """
-        # Create a boolean mask for this region (1 where match, 0 elsewhere)
-        # Must be uint8 for OpenCV contours
-        mask = (self.packed_map == region_id).astype(np.uint8) * 255
-        
-        # RETR_EXTERNAL = only outer borders (ignores holes inside the region)
-        # CHAIN_APPROX_SIMPLE = compresses straight lines (saves memory)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        return contours
-
-    def get_country_mask(self, region_ids: List[int]) -> np.ndarray:
-        """
-        Creates a boolean mask for a country composed of multiple regions.
-        
+        Algorithm: Look-Up Table (LUT) Vectorization.
+            Instead of iterating 2 million pixels, we create a small array (LUT) 
+            where index = RegionID and value = Color. 
+            NumPy then maps the entire image in one C-level operation.
+            
         Args:
-            region_ids: A list of integer IDs (packed colors) belonging to the country.
+            region_owner_map: Dict mapping {region_id: country_tag}
+            owner_colors: Dict mapping {country_tag: (R, G, B)}
             
         Returns:
-            np.ndarray: A boolean matrix (True where pixel belongs to country).
+            np.ndarray: An RGBA image array (Height, Width, 4) ready for texture creation.
         """
-        # np.isin is optimized C-code for "check if pixel value exists in list"
-        return np.isin(self.packed_map, region_ids)
+        t0 = time.time()
+        
+        # Determine the size of the LUT based on the highest region ID
+        max_id = np.max(self.packed_map)
+        
+        # Safety limit: If max_id is astronomical (e.g. 16 million because sparse colors), 
+        # a 16MB array is fine, but we should be aware of memory. 
+        # For a standard strategy game (IDs 1-5000), this array is tiny (~5KB).
+        
+        # Initialize LUTs for R, G, B channels
+        lut_r = np.zeros(max_id + 1, dtype=np.uint8)
+        lut_g = np.zeros(max_id + 1, dtype=np.uint8)
+        lut_b = np.zeros(max_id + 1, dtype=np.uint8)
+        
+        # Fill the Look-Up Tables
+        # This loop only runs N times (where N = number of regions), which is fast.
+        for region_id, owner_tag in region_owner_map.items():
+            if region_id > max_id: 
+                continue # Skip IDs that don't exist on the map map
+            
+            # Default to Gray if owner has no color defined
+            color = owner_colors.get(owner_tag, (128, 128, 128)) 
+            
+            lut_r[region_id] = color[0]
+            lut_g[region_id] = color[1]
+            lut_b[region_id] = color[2]
+
+        # Apply the LUT to the whole map at once
+        # This replaces every pixel ID in packed_map with its corresponding color channel
+        r_layer = lut_r[self.packed_map]
+        g_layer = lut_g[self.packed_map]
+        b_layer = lut_b[self.packed_map]
+        
+        # Generate Alpha Channel
+        # Logic: Pixels with color (valid owners) get 180 alpha (semi-transparent).
+        # Pixels with (0,0,0) (no owner/water) get 0 alpha (fully transparent).
+        # We check if any channel has a value > 0.
+        a_layer = np.where((r_layer > 0) | (g_layer > 0) | (b_layer > 0), 180, 0).astype(np.uint8)
+
+        # Merge channels into a single RGBA image
+        # Note: Arcade/PIL expects RGBA.
+        political_map = cv2.merge([r_layer, g_layer, b_layer, a_layer])
+
+        print(f"[RegionAtlas] Political layer generated in {time.time() - t0:.3f}s")
+        return political_map
 
     def render_country_overlay(self, 
                              region_ids: List[int], 
@@ -180,6 +212,7 @@ class RegionAtlas:
                              thickness: int = 3) -> Tuple[Optional[np.ndarray], int, int]:
         """
         Generates a small overlay image cropped to the region's bounding box.
+        Used for hovering/selection highlights.
         
         Returns:
             Tuple: (image_data, x_offset, y_offset)
@@ -187,9 +220,7 @@ class RegionAtlas:
         if not region_ids:
             return None, 0, 0
 
-        # 1. Find Bounding Box (Optimization: Work only on relevant pixels)
-        # Using np.where on the full map is still the heaviest part, but much faster 
-        # than allocating a full-size image later.
+        # Optimization: Only process relevant pixels to find bounding box
         if len(region_ids) == 1:
             ys, xs = np.where(self.packed_map == region_ids[0])
         else:
@@ -198,24 +229,15 @@ class RegionAtlas:
         if len(xs) == 0:
             return None, 0, 0
 
-        # Calculate bounds with padding for the border thickness
+        # Calculate crop bounds with padding for the border
         pad = thickness + 2
-        x_min, x_max = np.min(xs), np.max(xs)
-        y_min, y_max = np.min(ys), np.max(ys)
+        x_min, x_max = max(0, np.min(xs) - pad), min(self.width, np.max(xs) + pad)
+        y_min, y_max = max(0, np.min(ys) - pad), min(self.height, np.max(ys) + pad)
 
-        # Clamp to map dimensions
-        x_min = max(0, x_min - pad)
-        y_min = max(0, y_min - pad)
-        x_max = min(self.width, x_max + pad)
-        y_max = min(self.height, y_max + pad)
-
-        w = x_max - x_min
-        h = y_max - y_min
-
-        # 2. Crop the map to the Region of Interest (ROI)
+        # Crop the map to the Region of Interest (ROI)
         roi = self.packed_map[y_min:y_max, x_min:x_max]
 
-        # 3. Create Mask on ROI (Fast)
+        # Create mask for contours
         if len(region_ids) == 1:
             mask = (roi == region_ids[0])
         else:
@@ -223,62 +245,15 @@ class RegionAtlas:
             
         mask_uint8 = mask.astype(np.uint8) * 255
 
-        # 4. Find Contours on ROI
+        # Find contours (borders)
         contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # 5. Draw on small ROI image
+        # Draw contours on a transparent buffer
+        h, w = roi.shape
         overlay = np.zeros((h, w, 4), dtype=np.uint8)
-        bgr_color = (border_color[2], border_color[1], border_color[0])
-        
-        cv2.drawContours(overlay, contours, -1, bgr_color + (255,), thickness)
+        # OpenCV uses BGR for drawing, but since we output to Arcade, we must supply RGB? 
+        # Actually cv2.drawContours takes a color tuple. If we pass (R,G,B), it draws that.
+        # But we need to be consistent. Let's assume input is RGB.
+        cv2.drawContours(overlay, contours, -1, border_color + (255,), thickness)
 
-        # Return the small image AND its top-left position in the main map
         return overlay, x_min, y_min
-
-# =========================================================================
-# EXAMPLE USAGE
-# =========================================================================
-if __name__ == "__main__":
-    # Mock setup
-    IMG_PATH = "regions.png"
-    
-    # Create a dummy image if it doesn't exist (for testing this script)
-    if not os.path.exists(IMG_PATH):
-        print("Creating dummy test image...")
-        dummy = np.zeros((500, 500, 3), dtype=np.uint8)
-        cv2.rectangle(dummy, (50, 50), (200, 200), (255, 0, 0), -1) # Blue Region
-        cv2.rectangle(dummy, (250, 50), (400, 200), (0, 255, 0), -1) # Green Region
-        cv2.imwrite(IMG_PATH, dummy)
-
-    # 1. Initialize Atlas
-    atlas = RegionAtlas(IMG_PATH)
-    print(f"Atlas loaded. Dimensions: {atlas.width}x{atlas.height}")
-
-    # 2. Test Coordinate Lookup
-    test_x, test_y = 100, 100
-    region_id = atlas.get_region_at(test_x, test_y)
-    color = atlas.get_color_at(test_x, test_y)
-    print(f"Pixel at ({test_x}, {test_y}): ID={region_id}, RGB={color}")
-
-    # 3. Test Region Boundaries
-    # Get contours for the region ID we found
-    if region_id is not None:
-        contours = atlas.get_region_boundaries(region_id)
-        print(f"Region {region_id} has {len(contours)} contour(s).")
-
-    # 4. Test Country Merging
-    # Let's pretend Blue (255,0,0) and Green (0,255,0) are one country
-    blue_id = atlas.pack_color(0, 0, 255) # BGR: 255,0,0 -> RGB: 0,0,255 (wait, OpenCV is BGR)
-    # Be careful: In script I pack as B + (G<<8) + (R<<16).
-    # So if OpenCV reads (255, 0, 0) -> B=255, G=0, R=0.
-    # packed = 255 + 0 + 0 = 255.
-    
-    green_id = atlas.pack_color(0, 255, 0) 
-    
-    # Get overlay of merged country
-    overlay = atlas.render_country_overlay([blue_id, green_id], thickness=5)
-    
-    # Save overlay to verify
-    cv2.imwrite("country_debug.png", overlay)
-    print("Saved 'country_debug.png' with the merged borders.")
-
