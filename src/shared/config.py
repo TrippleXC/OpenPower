@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from typing import List
 
@@ -8,8 +7,7 @@ class GameConfig:
     
     Responsibilities:
     1. Resolve file paths dynamically (removing hardcoded strings).
-    2. Manage the Mod Load Order via 'mods.json'.
-    3. Provide access to Data and Asset directories.
+    2. Provide access to Data and Asset directories.
     """
     def __init__(self, project_root: Path):
         self.project_root = project_root
@@ -17,26 +15,10 @@ class GameConfig:
         # Standard directory structure definitions
         self.modules_dir = project_root / "modules"
         self.cache_dir = project_root / ".cache"
-        self.mods_file = project_root / "mods.json"
         
-        # Default load order (can be overridden by mods.json)
+        # Default load order.
+        # This will be populated/overwritten by ModManager in GameSession.
         self.active_mods: List[str] = ["base"]
-        self._load_mods_manifest()
-
-    def _load_mods_manifest(self):
-        """Attempts to read the load order from mods.json."""
-        if not self.mods_file.exists():
-            return
-
-        try:
-            with open(self.mods_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                # Expected format: {"active_mods": ["base", "my_mod"]}
-                if "active_mods" in data and isinstance(data["active_mods"], list):
-                    self.active_mods = data["active_mods"]
-                    print(f"[Config] Active Mods: {self.active_mods}")
-        except Exception as e:
-            print(f"[Config] Warning: Failed to parse mods.json: {e}")
 
     def get_data_dirs(self) -> List[Path]:
         """

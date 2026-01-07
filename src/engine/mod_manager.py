@@ -45,19 +45,31 @@ class ModManager:
         for mod_dir in self.modules_dir.iterdir():
             if not mod_dir.is_dir(): continue
             
-            manifest_path = mod_dir / "mod.json"
+            # Check for mod.toml or mod.json
+            manifest_path = mod_dir / "mod.toml"
+            is_toml = True
+            if not manifest_path.exists():
+                manifest_path = mod_dir / "mod.json"
+                is_toml = False
+
             if manifest_path.exists():
                 try:
-                    with open(manifest_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        manifest = ModManifest(
-                            id=data.get("id", mod_dir.name),
-                            name=data.get("name", mod_dir.name),
-                            version=data.get("version", "0.0.1"),
-                            dependencies=data.get("dependencies", []),
-                            path=mod_dir
-                        )
-                        available_mods[manifest.id] = manifest
+                    if is_toml:
+                        import rtoml
+                        with open(manifest_path, "r", encoding="utf-8") as f:
+                            data = rtoml.load(f)
+                    else:
+                        with open(manifest_path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            
+                    manifest = ModManifest(
+                        id=data.get("id", mod_dir.name),
+                        name=data.get("name", mod_dir.name),
+                        version=data.get("version", "0.0.1"),
+                        dependencies=data.get("dependencies", []),
+                        path=mod_dir
+                    )
+                    available_mods[manifest.id] = manifest
                 except Exception as e:
                     print(f"[ModManager] Failed to load manifest for {mod_dir.name}: {e}")
 

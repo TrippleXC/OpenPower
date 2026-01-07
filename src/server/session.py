@@ -13,9 +13,9 @@ class GameSession:
     """
     The 'Host' of the game. It manages the lifecycle of the simulation.
     """
-    def __init__(self, root_dir: Path):
-        self.root_dir = root_dir
-        self.config = GameConfig(root_dir)
+    def __init__(self, config: GameConfig):
+        self.config = config
+        self.root_dir = config.project_root
         
         # 1. Initialize Mod System
         # We must resolve mods BEFORE loading data or systems.
