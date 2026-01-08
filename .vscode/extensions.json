@@ -1,5 +1,6 @@
 {
     "recommendations": [
-        "repreng.csv"
+        "repreng.csv",
+        "tamasfe.even-better-toml"
     ]
 }
