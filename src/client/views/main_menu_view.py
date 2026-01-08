@@ -49,10 +49,10 @@ class MainMenuView(arcade.View):
         
         if self.ui.begin_centered_panel("Main Menu", screen_w, screen_h, width=350, height=450):
             
-            self.ui.draw_title("OPEN POWER")
+            self.ui.draw_title("OPENPOWER")
             
             # -- Menu Buttons --
-            if self.ui.draw_menu_button("SINGLE PLAYER"):
+            if self.ui.draw_menu_button("SINGLEPLAYER"):
                 # Transition to New Game selection screen
                 next_view = NewGameView(self.session, self.config)
                 self.window.show_view(next_view)
