@@ -56,7 +56,7 @@ class EditorLoadingTask:
         
         # We perform the heavy CV2/NumPy analysis here using the technical map (regions).
         # This is safe to do in a thread because it doesn't touch OpenGL.
-        atlas = RegionAtlas(str(map_path), str(self.config.cache_dir))
+        atlas = RegionAtlas(str(map_path))
         
         # 3. Initialize Network
         self.status_text = "Connecting to Session..."

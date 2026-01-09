@@ -1,211 +1,63 @@
 import os
-import json
 import time
+import json
 import cv2
 import numpy as np
-from typing import Tuple, List, Optional, Dict, Union
+import arcade
+import arcade.gl
+from typing import List, Tuple, Optional, Dict
+from array import array
+
+# Import the shaders strings defined above
+from src.shared.map.shaders import VERTEX_SHADER, FRAGMENT_SHADER 
 
 class RegionAtlas:
     """
-    Manages the raw region map data, spatial caching, and pixel-level queries.
-    
-    Responsibility:
-        This class is a Data Provider. It does not know about Arcade, rendering contexts,
-        or game logic. It simply answers questions like "What region is at (x,y)?"
-        or "Generate an image where Region 1 is Red and Region 2 is Blue."
-        
-    Performance Note:
-        Uses memory-mapped NumPy arrays or efficient binary caching to handle 
-        high-resolution maps (4k+) without lag.
+    (Your existing class, slightly stripped for brevity, 
+     plus a new method to generate the GPU buffer)
     """
-
-    def __init__(self, image_path: str, cache_dir: str = ".cache"):
-        """
-        Initialize the atlas. Loads from cache if valid to speed up startup.
-
-        Args:
-            image_path (str): Path to the source 'regions.png' file.
-            cache_dir (str): Folder to store the optimized .npy and .json files.
-        """
+    def __init__(self, image_path: str):
         self.image_path = image_path
-        self.cache_dir = cache_dir
+        # Load Raw Image for CPU queries
+        self.raw_img = cv2.imread(image_path)
+        if self.raw_img is None:
+            raise FileNotFoundError(f"Missing {image_path}")
         
-        # Ensure cache directory exists
-        os.makedirs(self.cache_dir, exist_ok=True)
-
-        # distinct filenames for cache based on the source image name
-        base_name = os.path.splitext(os.path.basename(image_path))[0]
-        self.cache_file = os.path.join(cache_dir, f"{base_name}_packed.npy")
-        self.meta_file = os.path.join(cache_dir, f"{base_name}_meta.json")
-
-        # Load the map data (either from disk or by rebuilding)
-        self.packed_map = self._load_map_data()
+        self.height, self.width, _ = self.raw_img.shape
         
-        # Cache dimensions for bounds checking
-        self.height, self.width = self.packed_map.shape
+        # Build optimized packed map (B | G<<8 | R<<16)
+        b, g, r = cv2.split(self.raw_img)
+        self.packed_map = b.astype(np.int32) | (g.astype(np.int32) << 8) | (r.astype(np.int32) << 16)
 
-    # =========================================================================
-    # INTERNAL: Caching & Loading Logic
-    # =========================================================================
+    def get_region_at(self, x: int, y: int) -> int:
+        """CPU query for mouse interaction."""
+        if 0 <= x < self.width and 0 <= y < self.height:
+            # Note: image coordinates are (y, x)
+            return int(self.packed_map[y, x])
+        return 0
 
-    def _load_map_data(self) -> np.ndarray:
-        """Determines whether to load from cache or rebuild from source."""
-        if not os.path.exists(self.image_path):
-            raise FileNotFoundError(f"Source image not found: {self.image_path}")
-
-        current_mtime = os.path.getmtime(self.image_path)
-
-        # 1. Try to load valid cache to save startup time (decoding PNGs is slow)
-        if self._is_cache_valid(current_mtime):
-            # print(f"[RegionAtlas] Loading fast cache from: {self.cache_file}")
-            return np.load(self.cache_file)
-
-        # 2. Rebuild if stale or missing
-        print("[RegionAtlas] Source map changed. Rebuilding optimized cache...")
-        return self._rebuild_cache(current_mtime)
-
-    def _is_cache_valid(self, current_mtime: float) -> bool:
-        """Checks if .npy exists and metadata timestamp matches source."""
-        if not os.path.exists(self.cache_file) or not os.path.exists(self.meta_file):
-            return False
-        try:
-            with open(self.meta_file, 'r') as f:
-                meta = json.load(f)
-                return meta.get('mtime') == current_mtime
-        except (json.JSONDecodeError, KeyError, OSError):
-            return False
-
-    def _rebuild_cache(self, current_mtime: float) -> np.ndarray:
+    def get_lut_buffer(self, 
+                       region_owner_map: Dict[int, str], 
+                       owner_colors: Dict[str, Tuple[int, int, int]],
+                       max_regions: int = 8192) -> bytes:
         """
-        Reads PNG, packs RGB channels into a single Int32 array, and saves to disk.
-        
-        Why pack colors?
-            A standard image is (Height, Width, 3). Querying it requires checking 3 bytes.
-            By packing B, G, R into a single 32-bit integer, the image becomes (Height, Width).
-            This reduces memory usage (slightly) but massively speeds up equality checks 
-            (checking `pixel == ID` is 1 operation instead of 3).
+        Generates a Byte String representing the color of every region.
+        The GPU reads this as a texture to color the map.
         """
-        t0 = time.time()
-        
-        # Load standard BGR image via OpenCV
-        img = cv2.imread(self.image_path)
-        if img is None:
-            raise ValueError(f"Failed to decode image at {self.image_path}")
+        # Create an array of RGBA bytes: [R, G, B, A,  R, G, B, A, ...]
+        # Size: max_regions * 4 bytes
+        # Initialize with Gray (Unclaimed land)
+        lut = np.full((max_regions, 4), 128, dtype=np.uint8)
+        lut[:, 3] = 255 # Alpha 100%
 
-        # --- THE SPEED OPTIMIZATION ---
-        # Convert 3-channel (B, G, R) into 1-channel (Int32).
-        # Formula: ID = B | (G << 8) | (R << 16)
-        # Note: We use .astype(np.int32) to prevent 8-bit overflow during shifting.
-        b, g, r = cv2.split(img)
-        packed = b.astype(np.int32) | (g.astype(np.int32) << 8) | (r.astype(np.int32) << 16)
+        for rid, tag in region_owner_map.items():
+            if rid < max_regions:
+                # Get color or default to pink (error color)
+                c = owner_colors.get(tag, (255, 0, 255))
+                lut[rid] = [c[0], c[1], c[2], 255]
 
-        # Save binary data for fast loading next time
-        np.save(self.cache_file, packed)
-
-        # Save metadata
-        with open(self.meta_file, 'w') as f:
-            json.dump({'mtime': current_mtime}, f)
-
-        print(f"[RegionAtlas] Cache built in {time.time() - t0:.2f}s")
-        return packed
-
-    # =========================================================================
-    # PUBLIC: Helpers (Color <-> ID)
-    # =========================================================================
-
-    def pack_color(self, r: int, g: int, b: int) -> int:
-        """
-        Converts an RGB tuple to the internal Packed ID (int).
-        
-        Note:
-            OpenCV reads images as BGR. Our packing logic puts Blue in the lowest byte.
-        """
-        return int(b) | (int(g) << 8) | (int(r) << 16)
-
-    def unpack_color(self, packed_id: int) -> Tuple[int, int, int]:
-        """Converts an internal Packed ID (int) back to (R, G, B)."""
-        b = packed_id & 255
-        g = (packed_id >> 8) & 255
-        r = (packed_id >> 16) & 255
-        return (r, g, b)
-
-    # =========================================================================
-    # PUBLIC: Queries & Generators
-    # =========================================================================
-
-    def get_region_at(self, x: int, y: int) -> Optional[int]:
-        """
-        Returns the Region ID (int) at the specific coordinate.
-        """
-        if not (0 <= x < self.width and 0 <= y < self.height):
-            return None
-        # NumPy array is accessed as [row, col] -> [y, x]
-        return int(self.packed_map[y, x])
-
-    def generate_political_view(self, 
-                              region_owner_map: Dict[int, str], 
-                              owner_colors: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
-        """
-        Generates a full map texture where regions are colored by their owner.
-        
-        Algorithm: Look-Up Table (LUT) Vectorization.
-            Instead of iterating 2 million pixels, we create a small array (LUT) 
-            where index = RegionID and value = Color. 
-            NumPy then maps the entire image in one C-level operation.
-            
-        Args:
-            region_owner_map: Dict mapping {region_id: country_tag}
-            owner_colors: Dict mapping {country_tag: (R, G, B)}
-            
-        Returns:
-            np.ndarray: An RGBA image array (Height, Width, 4) ready for texture creation.
-        """
-        t0 = time.time()
-        
-        # Determine the size of the LUT based on the highest region ID
-        max_id = np.max(self.packed_map)
-        
-        # Safety limit: If max_id is astronomical (e.g. 16 million because sparse colors), 
-        # a 16MB array is fine, but we should be aware of memory. 
-        # For a standard strategy game (IDs 1-5000), this array is tiny (~5KB).
-        
-        # Initialize LUTs for R, G, B channels
-        lut_r = np.zeros(max_id + 1, dtype=np.uint8)
-        lut_g = np.zeros(max_id + 1, dtype=np.uint8)
-        lut_b = np.zeros(max_id + 1, dtype=np.uint8)
-        
-        # Fill the Look-Up Tables
-        # This loop only runs N times (where N = number of regions), which is fast.
-        for region_id, owner_tag in region_owner_map.items():
-            if region_id > max_id: 
-                continue # Skip IDs that don't exist on the map map
-            
-            # Default to Gray if owner has no color defined
-            color = owner_colors.get(owner_tag, (128, 128, 128)) 
-            
-            lut_r[region_id] = color[0]
-            lut_g[region_id] = color[1]
-            lut_b[region_id] = color[2]
-
-        # Apply the LUT to the whole map at once
-        # This replaces every pixel ID in packed_map with its corresponding color channel
-        r_layer = lut_r[self.packed_map]
-        g_layer = lut_g[self.packed_map]
-        b_layer = lut_b[self.packed_map]
-        
-        # Generate Alpha Channel
-        # Logic: Pixels with color (valid owners) get 180 alpha (semi-transparent).
-        # Pixels with (0,0,0) (no owner/water) get 0 alpha (fully transparent).
-        # We check if any channel has a value > 0.
-        a_layer = np.where((r_layer > 0) | (g_layer > 0) | (b_layer > 0), 180, 0).astype(np.uint8)
-
-        # Merge channels into a single RGBA image
-        # Note: Arcade/PIL expects RGBA.
-        political_map = cv2.merge([r_layer, g_layer, b_layer, a_layer])
-
-        print(f"[RegionAtlas] Political layer generated in {time.time() - t0:.3f}s")
-        return political_map
-
+        # Return raw bytes for texture upload
+        return lut.tobytes()
     def render_country_overlay(self, 
                              region_ids: List[int], 
                              border_color: Tuple[int, int, int] = (255, 255, 255),
@@ -220,7 +72,8 @@ class RegionAtlas:
         if not region_ids:
             return None, 0, 0
 
-        # Optimization: Only process relevant pixels to find bounding box
+        # 1. Find pixels belonging to these regions
+        # np.isin is slower than ==, so we optimize for single region selection
         if len(region_ids) == 1:
             ys, xs = np.where(self.packed_map == region_ids[0])
         else:
@@ -229,15 +82,15 @@ class RegionAtlas:
         if len(xs) == 0:
             return None, 0, 0
 
-        # Calculate crop bounds with padding for the border
+        # 2. Calculate crop bounds with padding for the border thickness
         pad = thickness + 2
         x_min, x_max = max(0, np.min(xs) - pad), min(self.width, np.max(xs) + pad)
         y_min, y_max = max(0, np.min(ys) - pad), min(self.height, np.max(ys) + pad)
 
-        # Crop the map to the Region of Interest (ROI)
+        # 3. Crop the map to the Region of Interest (ROI) to save processing time
         roi = self.packed_map[y_min:y_max, x_min:x_max]
 
-        # Create mask for contours
+        # 4. Create binary mask for contours
         if len(region_ids) == 1:
             mask = (roi == region_ids[0])
         else:
@@ -245,15 +98,174 @@ class RegionAtlas:
             
         mask_uint8 = mask.astype(np.uint8) * 255
 
-        # Find contours (borders)
+        # 5. Find contours (borders) using OpenCV
         contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Draw contours on a transparent buffer
+        # 6. Draw contours on a transparent RGBA buffer
         h, w = roi.shape
         overlay = np.zeros((h, w, 4), dtype=np.uint8)
-        # OpenCV uses BGR for drawing, but since we output to Arcade, we must supply RGB? 
-        # Actually cv2.drawContours takes a color tuple. If we pass (R,G,B), it draws that.
-        # But we need to be consistent. Let's assume input is RGB.
+        
+        # Draw the border (Color + Alpha 255)
         cv2.drawContours(overlay, contours, -1, border_color + (255,), thickness)
 
         return overlay, x_min, y_min
+
+class MapRenderer:
+    """
+    Handles the GPU Context, Shader compilation, and Texture management.
+    """
+    def __init__(self, window: arcade.Window, atlas: RegionAtlas):
+        self.window = window
+        self.ctx = window.ctx
+        self.atlas = atlas
+        self.width = atlas.width
+        self.height = atlas.height
+
+        # 1. Setup Quad Geometry (A simple rectangle covering the screen)
+        # 4 vertices: x, y, u, v
+        buffer_data = array('f', [
+            -1.0, -1.0, 0.0, 0.0,  # Bottom Left
+             1.0, -1.0, 1.0, 0.0,  # Bottom Right
+            -1.0,  1.0, 0.0, 1.0,  # Top Left
+             1.0,  1.0, 1.0, 1.0,  # Top Right
+        ])
+        self.quad_buffer = self.ctx.buffer(data=buffer_data)
+        self.quad_geometry = self.ctx.geometry(
+            [arcade.gl.BufferDescription(self.quad_buffer, '2f 2f', ['in_vert', 'in_uv'])],
+            mode=self.ctx.TRIANGLE_STRIP
+        )
+
+        # 2. Create the Map Texture (The Source)
+        # IMPORTANT: filter must be NEAREST to prevent color blending at borders
+        self.map_texture = self.ctx.texture(
+            (self.width, self.height),
+            components=3,
+            data=cv2.cvtColor(atlas.raw_img, cv2.COLOR_BGR2RGB).tobytes(),
+            filter=(self.ctx.NEAREST, self.ctx.NEAREST) 
+        )
+
+        # 3. Create the Lookup Texture (The Data)
+        # Width = MAX_REGIONS, Height = 1
+        self.max_regions = 8192
+        self.lut_texture = self.ctx.texture(
+            (self.max_regions, 1),
+            components=4,
+            filter=(self.ctx.NEAREST, self.ctx.NEAREST)
+        )
+
+        # 4. Compile Shader
+        self.program = self.ctx.program(
+            vertex_shader=VERTEX_SHADER,
+            fragment_shader=FRAGMENT_SHADER
+        )
+        
+        # Set Initial Uniforms
+        self.program['u_map_texture'] = 0    # Bound to channel 0
+        self.program['u_lookup_texture'] = 1 # Bound to channel 1
+        self.program['u_texture_size'] = (float(self.width), float(self.height))
+
+    def update_political_state(self, region_map, color_map):
+        """Called whenever territory changes hands."""
+        data = self.atlas.get_lut_buffer(region_map, color_map, self.max_regions)
+        self.lut_texture.write(data)
+
+    def render(self, hover_id: int = -1, selected_id: int = -1):
+        """Draws the map to the screen."""
+        self.ctx.enable(self.ctx.BLEND)
+        
+        # Bind textures to channels
+        self.map_texture.use(0)
+        self.lut_texture.use(1)
+        
+        # Update dynamic uniforms
+        try:
+            self.program['u_hover_id'] = hover_id
+            self.program['u_selected_id'] = selected_id
+        except KeyError:
+            pass # Shader might optimize out uniforms if unused
+            
+        # Draw
+        self.quad_geometry.render(self.program)
+
+# =========================================================================
+# GAME IMPLEMENTATION EXAMPLE
+# =========================================================================
+
+class StrategyGame(arcade.Window):
+    def __init__(self):
+        super().__init__(1280, 720, "GLSL Strategy Map", resizable=True)
+        
+        # Load Data
+        # Ensure you have a 'regions.png' in the folder!
+        self.atlas = RegionAtlas("regions.png") 
+        self.renderer = MapRenderer(self, self.atlas)
+        
+        # Game State
+        self.hover_id = 0
+        self.selected_id = -1
+        
+        # Define Countries
+        self.country_colors = {
+            "FRA": (50, 50, 200),   # Blue
+            "GER": (50, 50, 50),    # Grey
+            "ESP": (200, 200, 50),  # Yellow
+            "ITA": (50, 200, 50),   # Green
+        }
+        
+        # Assign Regions (Randomly for demo)
+        self.region_owners = {}
+        tags = list(self.country_colors.keys())
+        for i in range(1, 200): # Assuming 200 regions
+            self.region_owners[i] = tags[i % len(tags)]
+            
+        # Initial GPU Upload
+        self.renderer.update_political_state(self.region_owners, self.country_colors)
+
+    def on_draw(self):
+        self.clear()
+        # Render the map
+        self.renderer.render(self.hover_id, self.selected_id)
+        
+        # Draw UI on top
+        arcade.draw_text(f"Hover Region: {self.hover_id}", 10, 10, arcade.color.WHITE, 14)
+
+    def on_mouse_motion(self, x, y, dx, dy):
+        # 1. Coordinate conversion (Screen -> Image)
+        # Since we draw the map full screen stretched:
+        scale_x = self.atlas.width / self.width
+        scale_y = self.atlas.height / self.height
+        
+        img_x = int(x * scale_x)
+        # Arcade y is bottom-up, Image y is top-down usually
+        img_y = int((self.height - y) * scale_y) 
+        
+        # 2. CPU Lookup (Very fast)
+        self.hover_id = self.atlas.get_region_at(img_x, img_y)
+
+    def on_mouse_press(self, x, y, button, modifiers):
+        if button == arcade.MOUSE_BUTTON_LEFT:
+            self.selected_id = self.hover_id
+            
+            # DEMO: Change owner on click
+            if self.hover_id > 0:
+                current_owner = self.region_owners.get(self.hover_id, "FRA")
+                next_owner = "GER" if current_owner == "FRA" else "FRA"
+                self.region_owners[self.hover_id] = next_owner
+                
+                # Instant update!
+                self.renderer.update_political_state(self.region_owners, self.country_colors)
+
+if __name__ == "__main__":
+    # Create a dummy image if not exists for testing
+    if not os.path.exists("regions.png"):
+        print("Generating dummy regions.png...")
+        dummy = np.zeros((1024, 1024, 3), dtype=np.uint8)
+        # Draw some random circles to simulate regions
+        for i in range(1, 50):
+            color = (i & 255, (i >> 8) & 255, (i >> 16) & 255) # Encode ID in color
+            cv2.circle(dummy, (np.random.randint(0,1024), np.random.randint(0,1024)), 
+                       np.random.randint(50, 150), color, -1)
+        cv2.imwrite("regions.png", dummy)
+        
+    window = StrategyGame()
+    arcade.run()

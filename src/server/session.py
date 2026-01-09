@@ -108,7 +108,7 @@ class GameSession:
             if not map_path:
                 map_path = config.get_asset_path("map/regions.png")
 
-            atlas = RegionAtlas(str(map_path), str(config.cache_dir))
+            atlas = RegionAtlas(str(map_path))
 
             # --- Step 5: Engine & Systems (90%) ---
             report(0.8, "Server: Registering game systems...")
