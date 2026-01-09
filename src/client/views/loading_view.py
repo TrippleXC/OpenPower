@@ -4,7 +4,7 @@ from typing import Callable, Any
 from src.client.services.imgui_service import ImGuiService
 from src.client.ui.composer import UIComposer
 from src.client.ui.theme import GAMETHEME
-from src.client.interfaces.loading_task import LoadingTask
+from src.client.interfaces.loading import LoadingTask
 
 class LoadingView(arcade.View):
     """
