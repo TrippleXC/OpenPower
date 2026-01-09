@@ -3,6 +3,8 @@ import sys
 import os
 from pathlib import Path
 
+from pyinstrument import Profiler
+
 # 1. Setup Python Path
 ROOT_DIR = Path(__file__).parent.resolve()
 sys.path.append(str(ROOT_DIR))
@@ -12,6 +14,8 @@ from src.shared.config import GameConfig
 from src.client.window import MainWindow
 
 def main():
+    profiler = Profiler()
+    profiler.start()
     print("--- OpenPower Engine Initializing ---")
     print(f"Process ID (PID): {os.getpid()}")
     
@@ -29,7 +33,15 @@ def main():
     window.setup()
     
     print("--- Window Created. Handing off to Loading Screen. ---")
-    arcade.run()
+    try:
+        arcade.run()
+    finally:
+        profiler.stop()
+        
+        with open("profile_results.html", "w", encoding="utf-8") as f:
+            f.write(profiler.output_html())
+            
+        print("✅ Saved profile_results.html")
 
 if __name__ == "__main__":
     main()

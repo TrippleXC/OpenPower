@@ -71,8 +71,15 @@ class MapRenderer:
         overlay, x_off, y_off = self.atlas.render_country_overlay(region_ids, border_color=color, thickness=3)
         if overlay is None: return
 
-        texture = arcade.Texture(Image.fromarray(overlay), hash=f"hl_{time.time()}")
-        sprite = arcade.Sprite(texture)
+        texture = arcade.Texture(
+            Image.fromarray(overlay), 
+            hash=f"hl_{time.time()}",
+            hit_box_algorithm=None  # OPTIMIZATION: no hitbox needed
+        )
+        sprite = arcade.Sprite(
+            texture,
+            hit_box_algorithm=None  # OPTIMIZATION: no hitbox needed
+        )
         
         # Align Sprite Center based on Top-Left offset
         h, w = overlay.shape[:2]
