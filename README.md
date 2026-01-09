@@ -48,7 +48,7 @@ OpenPower/
 │       └── config.py       # Path management
 ├── tools/
 │   └── mapgen.py           # Map compiler (SHP -> PNG/TSV)
-└── window.py               # Entry point
+└── main.py               # Entry point
 
 ```
 
