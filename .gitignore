@@ -230,6 +230,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 
-/temp
-/profile_results.html
-/imgui.ini
+temp
+profile_results.html
+imgui.ini
