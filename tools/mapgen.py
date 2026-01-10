@@ -34,11 +34,11 @@ from unidecode import unidecode
 # === CONFIGURATION ===
 CONFIG = {
     # Input source (Requires .shp, .shx, .dbf)
-    "input_shp": "temp/regions.shp",
+    "input_shp": ".temp/regions.shp",
     
     # Outputs
-    "output_png": "temp/regions.png",
-    "output_tsv": "temp/regions.tsv",
+    "output_png": ".temp/regions.png",
+    "output_tsv": ".temp/regions.tsv",
     
     # Texture Resolution
     "width": 10000,
