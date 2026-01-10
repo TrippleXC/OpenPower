@@ -34,7 +34,7 @@ from unidecode import unidecode
 # === CONFIGURATION ===
 CONFIG = {
     # Input source (Requires .shp, .shx, .dbf)
-    "input_shp": ".temp/regions.shp",
+    "input_shp": ".temp/ne_10m_admin_1_states_provinces.shp",
     
     # Outputs
     "output_png": ".temp/regions.png",
