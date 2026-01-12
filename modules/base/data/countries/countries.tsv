@@ -232,7 +232,7 @@ TTO		true	true
 TUN		true	true	
 TUR		true	true	
 TUV		true	true	
-TWN		false	false	CHN
+TWN		false	true	
 TZA		true	true	
 UGA		true	true	
 UKR		true	true	
