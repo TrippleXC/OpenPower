@@ -121,7 +121,9 @@ def load_old_database_by_ne_id(tsv_path):
         return data_map, used_colors
 
     try:
-        df = pd.read_csv(tsv_path, sep='\t', dtype=str)
+        # === FIX IS HERE ===
+        # Added .fillna("") to convert NaN floats back to empty strings
+        df = pd.read_csv(tsv_path, sep='\t', dtype=str).fillna("")
         
         for _, row in df.iterrows():
             nid = sanitize_ne_id(row.get('ne_id'))

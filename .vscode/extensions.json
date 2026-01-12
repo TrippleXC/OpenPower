@@ -3,6 +3,7 @@
         "repreng.csv",
         "tamasfe.even-better-toml",
         "shinotatwu-ds.file-tree-generator",
-        "dtoplak.vscode-glsllint"
+        "dtoplak.vscode-glsllint",
+        "moshfeu.diff-merge"
     ]
 }
