@@ -59,18 +59,19 @@ class ViewportController:
         self.cam_ctrl.zoom_scroll(scroll_y)
         self.cam_ctrl.sync_with_arcade(self.world_cam)
 
-    def _handle_selection(self, screen_x: float, screen_y: float):
-        world_pos = self.world_cam.unproject((screen_x, screen_y))
-        
-        # 1. Get Region ID from Map Data (CPU)
-        region_id = self.renderer.get_region_id_at_world_pos(world_pos.x, world_pos.y)
-        
-        if region_id is None or region_id <= 0:
+    def select_region_by_id(self, region_id: int):
+        """
+        Called by UI to force selection of a specific ID.
+        """
+        if region_id <= 0:
             self.renderer.clear_highlight()
             self.on_selection_change(None)
             return
 
-        # 2. Determine which IDs to highlight based on mode
+        self._apply_selection_logic(region_id)
+
+    def _apply_selection_logic(self, region_id: int):
+        """Refactored logic used by both Click and UI Selection."""
         highlight_ids = [region_id]
 
         if self.selection_mode == SelectionMode.COUNTRY:
@@ -78,19 +79,28 @@ class ViewportController:
             if "regions" in state.tables:
                 try:
                     df = state.tables["regions"]
-                    # Find owner of the clicked region
+                    # Find owner
                     owner_rows = df.filter(pl.col("id") == region_id)
                     
                     if not owner_rows.is_empty():
                         owner = owner_rows["owner"][0]
-                        # If it's a valid country, select ALL regions with that owner
                         if owner and owner != "None":
+                            # Select all regions with this owner
                             highlight_ids = df.filter(pl.col("owner") == owner)["id"].to_list()
-                except Exception as e:
-                    print(f"[Viewport] Selection Error: {e}")
+                except Exception:
+                    pass
 
-        # 3. Update Renderer Visuals
         self.renderer.set_highlight(highlight_ids)
-        
-        # 4. Update UI Panel (Show info for the specific clicked region)
         self.on_selection_change(region_id)
+
+    # Refactor existing _handle_selection to use the new shared logic
+    def _handle_selection(self, screen_x: float, screen_y: float):
+        world_pos = self.world_cam.unproject((screen_x, screen_y))
+        region_id = self.renderer.get_region_id_at_world_pos(world_pos.x, world_pos.y)
+        
+        if region_id is None or region_id <= 0:
+            self.renderer.clear_highlight()
+            self.on_selection_change(None)
+            return
+
+        self._apply_selection_logic(region_id)

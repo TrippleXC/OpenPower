@@ -3,7 +3,7 @@ from typing import Optional
 import polars as pl
 
 from src.client.services.network_client_service import NetworkClient
-from src.client.ui.composer import UIComposer
+from src.client.ui.layouts.base_layout import BaseLayout
 from src.client.ui.theme import GAMETHEME
 from src.client.controllers.viewport_controller import SelectionMode
 
@@ -11,27 +11,15 @@ from src.client.controllers.viewport_controller import SelectionMode
 from src.client.ui.panels.politics_panel import PoliticsPanel
 from src.client.ui.panels.military_panel import MilitaryPanel
 from src.client.ui.panels.economy_panel import EconomyPanel
-from src.client.ui.panels.region_inspector import RegionInspectorPanel
-
 from src.shared.actions import ActionSetGameSpeed, ActionSetPaused
 
-class GameLayout:
+class GameLayout(BaseLayout):
     def __init__(self, net_client: NetworkClient, player_tag: str, viewport_ctrl):
-        """
-        Manages the high-level HUD and Orchestration of sub-panels.
+        super().__init__(net_client, viewport_ctrl)
         
-        Args:
-            net_client: Access to the authoritative game state.
-            player_tag: The ID of the country the local player is controlling.
-            viewport_ctrl: Reference to handle selection mode switching.
-        """
-        self.net = net_client
         self.player_tag = player_tag
-        self.viewport_ctrl = viewport_ctrl
-        self.composer = UIComposer(GAMETHEME)
         
-        # Sub-panels
-        self.inspector = RegionInspectorPanel()
+        # Sub-panels (Inspector is already in BaseLayout)
         self.panel_politics = PoliticsPanel()
         self.panel_military = MilitaryPanel()
         self.panel_economy = EconomyPanel()
@@ -41,7 +29,6 @@ class GameLayout:
         self.show_military = True
         self.show_economy = True
         
-        # Visual Map Mode (Political vs Terrain)
         self.map_mode = "political"
 
     def render(self, selected_region_id: Optional[int], fps: float):
@@ -65,17 +52,12 @@ class GameLayout:
         self._render_time_controls(state)
         
         # 3. Contextual Inspector (Shows up when a region is clicked)
+        # Use shared method from BaseLayout
         if selected_region_id is not None:
-             self.inspector.render(selected_region_id, state)
+             self.render_inspector(selected_region_id, state)
 
     def _render_toggle_bar(self):
-        """
-        Renders the interactive buttons at the bottom left.
-        Handles both Panel Toggles and Selection Mode (Region/Country).
-        """
         screen_h = imgui.get_main_viewport().size.y
-        
-        # Position: Bottom Left (Vertical stack for toggles and modes)
         imgui.set_next_window_pos((10, screen_h - 145)) 
         
         flags = (imgui.WindowFlags_.no_decoration | 
@@ -84,16 +66,13 @@ class GameLayout:
                  imgui.WindowFlags_.no_background)
 
         if imgui.begin("ToggleBar", True, flags)[0]:
-            
             # --- PANEL TOGGLES ---
             if self.composer.draw_icon_toggle("POL", GAMETHEME.col_politics, self.show_politics):
                 self.show_politics = not self.show_politics
-            
             imgui.same_line()
             
             if self.composer.draw_icon_toggle("MIL", GAMETHEME.col_military, self.show_military):
                 self.show_military = not self.show_military
-            
             imgui.same_line()
             
             if self.composer.draw_icon_toggle("ECO", GAMETHEME.col_economy, self.show_economy):
@@ -108,44 +87,33 @@ class GameLayout:
             
             # Region Mode Button
             is_reg = self.viewport_ctrl.selection_mode == SelectionMode.REGION
-            if is_reg:
-                imgui.push_style_color(imgui.Col_.button, (0.0, 0.6, 0.8, 1.0))
-                imgui.push_style_color(imgui.Col_.text, (1, 1, 1, 1))
-            else:
-                imgui.push_style_color(imgui.Col_.button, (0.1, 0.1, 0.1, 0.7))
-                imgui.push_style_color(imgui.Col_.text, (0.5, 0.5, 0.5, 1))
-
-            if imgui.button("REG", (52, 25)):
-                self.viewport_ctrl.set_selection_mode(SelectionMode.REGION)
-            
-            imgui.pop_style_color(2)
+            self._draw_mode_button("REG", is_reg, lambda: self.viewport_ctrl.set_selection_mode(SelectionMode.REGION))
             imgui.same_line()
 
             # Country Mode Button
             is_ctry = self.viewport_ctrl.selection_mode == SelectionMode.COUNTRY
-            if is_ctry:
-                imgui.push_style_color(imgui.Col_.button, (0.0, 0.6, 0.8, 1.0))
-                imgui.push_style_color(imgui.Col_.text, (1, 1, 1, 1))
-            else:
-                imgui.push_style_color(imgui.Col_.button, (0.1, 0.1, 0.1, 0.7))
-                imgui.push_style_color(imgui.Col_.text, (0.5, 0.5, 0.5, 1))
-
-            if imgui.button("CTRY", (52, 25)):
-                self.viewport_ctrl.set_selection_mode(SelectionMode.COUNTRY)
-                
-            imgui.pop_style_color(2)
+            self._draw_mode_button("CTRY", is_ctry, lambda: self.viewport_ctrl.set_selection_mode(SelectionMode.COUNTRY))
 
         imgui.end()
 
+    def _draw_mode_button(self, label, is_active, callback):
+        """Helper for selection mode buttons."""
+        if is_active:
+            imgui.push_style_color(imgui.Col_.button, (0.0, 0.6, 0.8, 1.0))
+            imgui.push_style_color(imgui.Col_.text, (1, 1, 1, 1))
+        else:
+            imgui.push_style_color(imgui.Col_.button, (0.1, 0.1, 0.1, 0.7))
+            imgui.push_style_color(imgui.Col_.text, (0.5, 0.5, 0.5, 1))
+
+        if imgui.button(label, (52, 25)):
+            callback()
+        
+        imgui.pop_style_color(2)
+
     def _render_top_bar(self, state, fps: float):
-        """
-        Main Status Bar: Treasury, Player ID, Map Mode, and Performance.
-        """
         if imgui.begin_main_menu_bar():
-            # 1. Identity
             imgui.text_colored((0, 1, 1, 1), f"[{self.player_tag}]")
             
-            # 2. Financials
             balance = 0
             try:
                 if "countries" in state.tables:
@@ -160,7 +128,6 @@ class GameLayout:
             imgui.text(f"Treasury: ${balance:,.0f}".replace(",", " "))
             imgui.separator()
             
-            # 3. Map Layers
             if imgui.begin_menu("Map Mode"):
                 if imgui.menu_item("Political", "", self.map_mode == "political")[0]:
                     self.map_mode = "political"
@@ -168,7 +135,6 @@ class GameLayout:
                     self.map_mode = "terrain"
                 imgui.end_menu()
 
-            # 4. Performance Metrics (Right Aligned)
             main_vp_w = imgui.get_main_viewport().size.x
             imgui.set_cursor_pos_x(main_vp_w - 85)
             imgui.text_disabled(f"{fps:.0f} FPS")
@@ -176,9 +142,6 @@ class GameLayout:
             imgui.end_main_menu_bar()
 
     def _render_time_controls(self, state):
-        """
-        Central Time Control Console.
-        """
         viewport = imgui.get_main_viewport()
         screen_w = viewport.size.x
         screen_h = viewport.size.y
@@ -202,7 +165,6 @@ class GameLayout:
         if imgui.begin("TimeControls", flags=flags):
             t = state.time
 
-            # Date Header
             date_str = t.date_str
             text_w = imgui.calc_text_size(date_str).x
             imgui.set_cursor_pos_x((panel_w - text_w) / 2)
@@ -210,12 +172,10 @@ class GameLayout:
             
             imgui.dummy((0, 2)) 
 
-            # Speed Controls
             button_w = 42
             total_buttons_w = (button_w * 6) + (imgui.get_style().item_spacing.x * 5)
             imgui.set_cursor_pos_x((panel_w - total_buttons_w) / 2)
 
-            # Pause/Play Toggle
             self._draw_speed_button("||", is_active=t.is_paused, width=button_w, 
                                     callback=lambda: self.net.send_action(ActionSetPaused("local", True)))
             imgui.same_line()
@@ -236,7 +196,6 @@ class GameLayout:
         imgui.pop_style_color(2)
 
     def _draw_speed_button(self, label: str, is_active: bool, width: float, callback):
-        """Helper for consistently styled speed buttons."""
         if is_active:
             imgui.push_style_color(imgui.Col_.button, (0.0, 0.6, 0.8, 1.0))
             imgui.push_style_color(imgui.Col_.text, (1.0, 1.0, 1.0, 1.0))

@@ -8,6 +8,7 @@ from src.client.ui.composer import UIComposer
 from src.client.ui.theme import GAMETHEME
 from src.shared.config import GameConfig
 from src.client.views.game_view import GameView
+from src.client.utils.coords_util import calculate_centroid
 
 if TYPE_CHECKING:
     from src.server.session import GameSession
@@ -139,33 +140,27 @@ class NewGameView(arcade.View):
 
         print(f"[NewGameView] Starting game as {self.selected_country_id}")
         
-        # --- CALCULATE COUNTRY CENTER ---
         state = self.net.get_state()
         start_pos = None
 
         try:
             if "regions" in state.tables:
-                df = state.get_table("regions")
+                df = state.tables["regions"]
                 
-                # 1. Filter for regions owned by this country
-                # We assume the table has columns "x", "y" (or "center_x", "center_y")
-                # Adjust the column names below to match your schema exactly.
+                # Filter for the country's regions
                 owned_regions = df.filter(pl.col("owner") == self.selected_country_id)
                 
-                if not owned_regions.is_empty():
-                    # 2. Calculate the mean (average) position
-                    # This gives us the geometric center of the country
-                    avg_x = owned_regions["center_x"].mean() 
-                    avg_y = owned_regions["center_y"].mean()
+                # --- NEW UTILITY USAGE ---
+                # Calculates the center AND handles the Y-flip automatically
+                map_height = self.session.map_data.height
+                start_pos = calculate_centroid(owned_regions, map_height)
+                
+                if start_pos:
+                    print(f"[NewGameView] Centered on {self.selected_country_id} at {start_pos}")
                     
-                    if avg_x is not None and avg_y is not None:
-                        start_pos = (float(avg_x), float(avg_y))
-                        print(f"[NewGameView] Calculated start pos: {start_pos}")
         except Exception as e:
             print(f"[NewGameView] Error calculating center: {e}")
 
-        # --- LAUNCH GAME ---
-        # Pass the calculated start_pos to the GameView
         game_view = GameView(
             self.session, 
             self.config, 
