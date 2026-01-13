@@ -1,10 +1,9 @@
 from imgui_bundle import imgui
 from src.client.ui.composer import UIComposer
+from src.server.state import GameState
 
 class PoliticsPanel:
-    def render(self, composer: UIComposer, state):
-        # Position: Left side (approx 10px from left)
-        # Use begin_panel to allow floating/dragging
+    def render(self, composer: UIComposer, state: GameState):
         expanded, _ = composer.begin_panel("POLITICS", 10, 100, 240, 520)
         
         if expanded:
@@ -16,16 +15,29 @@ class PoliticsPanel:
             # 2. Ideology
             composer.draw_section_header("IDEOLOGY", show_more_btn=False)
             
-            # Visual Slider (Read-only representation)
-            # Custom styling to make the grabber green or theme color
+            # --- READING STATE ---
+            # We try to read the actual value from the GameState.
+            # If not found, default to 0.5
+            current_ideology = 0.5 
+            # Example real lookup (commented out until table exists):
+            # if "politics" in state.tables:
+            #     current_ideology = state.tables["politics"]["ruling_party_alignment"]
+
             imgui.push_style_color(imgui.Col_.slider_grab, (0.4, 0.6, 0.4, 1.0))
             imgui.push_style_color(imgui.Col_.frame_bg, (0.1, 0.1, 0.1, 1.0))
             
-            # Mock value 0.3 (slightly left)
-            imgui.slider_float("##ideology", 0.3, 0.0, 1.0, "")
+            # --- RENDERING ONLY ---
+            # We pass "" as the label to hide it, and store the result in `changed, value`
+            # Crucially: We do NOT write `value` back to `state`. 
+            # If `changed` is true, we would dispatch a `GameAction`.
+            changed, new_val = imgui.slider_float("##ideology", current_ideology, 0.0, 1.0, "")
+            
+            if changed:
+                # TODO: Dispatch ActionSetIdeology(new_val) via NetClient
+                pass
+
             imgui.pop_style_color(2)
             
-            # Labels below slider
             imgui.text_disabled("Left")
             imgui.same_line()
             imgui.set_cursor_pos_x(imgui.get_content_region_avail().x - 30)
@@ -33,27 +45,24 @@ class PoliticsPanel:
             
             imgui.dummy((0, 5))
             if imgui.button("INTERNAL LAWS", (imgui.get_content_region_avail().x, 0)):
-                pass # TODO: Open laws modal
+                pass 
             imgui.dummy((0, 8))
 
-            # 3. Meters Section
-            # Green = Good, Red = Bad (usually)
-            
+            # 3. Meters (Read Only)
             composer.draw_section_header("APPROVAL", show_more_btn=False)
-            composer.draw_meter("", 51.7, (0.0, 0.6, 0.0)) # Green
+            composer.draw_meter("", 51.7, (0.0, 0.6, 0.0)) 
 
             composer.draw_section_header("PRESSURE", show_more_btn=False)
-            composer.draw_meter("", 0.0, (0.7, 0.1, 0.1)) # Red
+            composer.draw_meter("", 0.0, (0.7, 0.1, 0.1)) 
 
             composer.draw_section_header("STABILITY", show_more_btn=False)
-            composer.draw_meter("", 56.7, (0.0, 0.6, 0.0)) # Green
+            composer.draw_meter("", 56.7, (0.0, 0.6, 0.0)) 
 
             composer.draw_section_header("CORRUPTION", show_more_btn=False)
-            composer.draw_meter("", 47.2, (0.7, 0.1, 0.1)) # Red
+            composer.draw_meter("", 47.2, (0.7, 0.1, 0.1)) 
             
             imgui.dummy((0, 10))
             
-            # Footer Button
             if imgui.button("TREATIES", (imgui.get_content_region_avail().x, 35)):
                 pass
 

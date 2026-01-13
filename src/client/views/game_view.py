@@ -1,34 +1,32 @@
 import arcade
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from src.shared.config import GameConfig
-from src.server.session import GameSession
 from src.client.services.network_client_service import NetworkClient
 from src.client.services.imgui_service import ImGuiService
-
-# Base Class
 from src.client.views.base_view import BaseImGuiView
 
-# Composition Components
+# Components
 from src.client.renderers.map_renderer import MapRenderer
 from src.client.ui.layouts.game_layout import GameLayout
 from src.client.controllers.camera_controller import CameraController
 from src.client.controllers.viewport_controller import ViewportController
 from src.client.utils.color_generator import generate_political_colors
 
+if TYPE_CHECKING:
+    from src.server.session import GameSession
+
 class GameView(BaseImGuiView):
     """
     The main Gameplay state.
-    Refactored to match EditorView's architecture using Composition.
     """
     
-    def __init__(self, session: GameSession, config: GameConfig, player_tag: str):
+    def __init__(self, session: "GameSession", config: GameConfig, player_tag: str):
         super().__init__()
-        self.session = session
         self.config = config
-        self.player_tag = player_tag
         
         # 1. Services
+        # We wrap the session immediately. The rest of the view knows ONLY about self.net
         self.net = NetworkClient(session)
         self.imgui = ImGuiService(self.window)
         
@@ -36,8 +34,8 @@ class GameView(BaseImGuiView):
         self.layout = GameLayout(self.net, player_tag)
         
         # 3. Map System 
-        # (Fall back to atlas image path if config asset is missing)
         map_path = config.get_asset_path("map/regions.png")
+        # Fallback to session atlas path if specific asset missing (dynamic loading)
         if not map_path.exists() and session.atlas:
             from pathlib import Path
             map_path = Path(session.atlas.image_path)
@@ -70,13 +68,14 @@ class GameView(BaseImGuiView):
         self._refresh_political_map()
 
     def _refresh_political_map(self):
-        """Generates country colors using the shared utility."""
+        """Reads state via NetClient and updates renderer."""
         state = self.net.get_state()
         if "regions" not in state.tables: return
         
         df = state.get_table("regions")
         if "owner" not in df.columns: return
         
+        # Efficient Polars to Dict
         region_map = dict(zip(df["id"], df["owner"]))
         unique_owners = df["owner"].unique().to_list()
         
@@ -84,7 +83,6 @@ class GameView(BaseImGuiView):
         self.renderer.update_political_layer(region_map, color_map)
 
     def on_selection_changed(self, region_id: int | None):
-        """Callback from ViewportController."""
         self.selected_region_id = region_id
 
     def on_draw(self):
@@ -100,12 +98,10 @@ class GameView(BaseImGuiView):
         self.layout.render(self.selected_region_id, self.imgui.io.framerate)
         self.imgui.render()
 
-    def on_update(self, delta_time: float):
-        # Tick the session (Local Single Player)
-        self.session.tick(delta_time)
+    # NOTE: No on_update here. The MainWindow drives the session.tick().
+    # This View is purely for visualization of that state.
 
     # --- IMPLEMENTING BASE HOOKS ---
-
     def on_game_resize(self, width, height):
         self.world_cam.match_window()
 

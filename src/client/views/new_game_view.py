@@ -1,32 +1,41 @@
 import arcade
 import polars as pl
+from typing import TYPE_CHECKING, Optional
+
 from src.client.services.imgui_service import ImGuiService
+from src.client.services.network_client_service import NetworkClient
 from src.client.ui.composer import UIComposer
 from src.client.ui.theme import GAMETHEME
 from src.shared.config import GameConfig
-from src.server.session import GameSession
 from src.client.views.game_view import GameView
+
+if TYPE_CHECKING:
+    from src.server.session import GameSession
 
 class NewGameView(arcade.View):
     """
     Screen to select a country and start the campaign.
     """
-    def __init__(self, session: GameSession, config: GameConfig):
+    def __init__(self, session: "GameSession", config: GameConfig):
         super().__init__()
-        self.session = session
+        self.session = session # Kept only to pass to GameView later
         self.config = config
+        
+        # Use NetworkClient for reading data (Passive Observer)
+        self.net = NetworkClient(session)
         
         self.imgui = ImGuiService(self.window)
         self.ui = UIComposer(GAMETHEME)
         
-        self.selected_country_id: str | None = None
+        self.selected_country_id: Optional[str] = None
         self.playable_countries = self._fetch_playable_countries()
 
     def _fetch_playable_countries(self) -> pl.DataFrame:
-        """Helper to get list of countries from the loaded session state."""
+        """Helper to get list of countries from the network state."""
         try:
-            df = self.session.state.get_table("countries")
-            # Sort by ID for now
+            # CORRECT: Going through the network client abstraction
+            state = self.net.get_state()
+            df = state.get_table("countries")
             return df.sort("id")
         except KeyError:
             print("[NewGameView] 'countries' table not found in state.")
@@ -42,14 +51,12 @@ class NewGameView(arcade.View):
         self.clear()
         self.imgui.new_frame(1.0 / 60.0)
         self.ui.setup_frame()
-        
         self._render_ui()
         self.imgui.render()
 
     def _render_ui(self):
         screen_w, screen_h = self.window.get_size()
         
-        # Use a larger panel
         if self.ui.begin_centered_panel("New Game", screen_w, screen_h, width=600, height=500):
             self.ui.draw_title("SELECT NATION")
             
@@ -61,7 +68,6 @@ class NewGameView(arcade.View):
             if not self.playable_countries.is_empty():
                 for row in self.playable_countries.iter_rows(named=True):
                     c_id = row['id']
-                    # Use 'flag' column if it exists later
                     label = f"{c_id}"
                     
                     is_selected = (self.selected_country_id == c_id)
@@ -76,12 +82,27 @@ class NewGameView(arcade.View):
             
             # --- Details Panel (Right Side) ---
             imgui.begin_group()
-            imgui.dummy((300, 0)) # Fixed width for details
+            imgui.dummy((300, 0))
             
             if self.selected_country_id:
                 imgui.text_colored((0, 1, 1, 1), f"Selected: {self.selected_country_id}")
                 imgui.separator()
-                imgui.text_wrapped("Description placeholder. Economy stats, military strength, and starting conditions will appear here.")
+                
+                # Fetch details using Polars through the state snapshot
+                state = self.net.get_state()
+                try:
+                    df = state.get_table("countries")
+                    # In a real scenario, efficient filtering would happen here
+                    # For UI rendering, simple checks are okay
+                    balance = 0
+                    row = df.filter(pl.col("id") == self.selected_country_id)
+                    if not row.is_empty():
+                         balance = row["money_balance"][0]
+                    imgui.text(f"Starting Balance: ${balance:,}")
+                except Exception:
+                    pass
+                    
+                imgui.text_wrapped("Description placeholder.")
             else:
                 imgui.text_disabled("Select a nation from the list.")
                 
@@ -93,17 +114,15 @@ class NewGameView(arcade.View):
             
             # --- Bottom Buttons ---
             if imgui.button("BACK", (100, 40)):
-                # Return to Main Menu (Circular import avoidance: Instantiate locally or pass class)
+                # Avoid circular import at module level
                 from src.client.views.main_menu_view import MainMenuView
                 self.window.show_view(MainMenuView(self.session, self.config))
                 
             imgui.same_line()
             
-            # Right-align Start button
             avail_w = imgui.get_content_region_avail().x
             imgui.set_cursor_pos_x(imgui.get_cursor_pos_x() + avail_w - 150)
             
-            # Start Game
             if self.selected_country_id:
                 if imgui.button("START CAMPAIGN", (150, 40)):
                     self._start_game()
@@ -115,11 +134,7 @@ class NewGameView(arcade.View):
             self.ui.end_panel()
 
     def _start_game(self):
-        """Launch the GameView with the selected country."""
         print(f"[NewGameView] Starting game as {self.selected_country_id}")
-        
-        # TODO: Here we could set the 'local_player' in the session if we wanted validation
-        
         game_view = GameView(self.session, self.config, self.selected_country_id)
         self.window.show_view(game_view)
 
