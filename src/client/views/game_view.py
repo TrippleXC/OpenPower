@@ -11,7 +11,7 @@ from src.client.controllers.viewport_controller import ViewportController
 from src.client.utils.color_generator import generate_political_colors
 
 class GameView(BaseImGuiView):
-    def __init__(self, session, config, player_tag):
+    def __init__(self, session, config, player_tag, initial_pos: tuple[float, float] = None):
         super().__init__()
         self.config = config
         self.net = NetworkClient(session)
@@ -27,7 +27,14 @@ class GameView(BaseImGuiView):
         )
         
         self.world_cam = arcade.Camera2D()
-        self.cam_ctrl = CameraController((self.renderer.width / 2, self.renderer.height / 2))
+ 
+        if initial_pos:
+            start_x, start_y = initial_pos
+        else:
+            start_x = self.renderer.width / 2
+            start_y = self.renderer.height / 2
+            
+        self.cam_ctrl = CameraController((start_x, start_y))
         
         # Updated: Pass self.net to the viewport controller
         self.viewport_ctrl = ViewportController(

@@ -36,7 +36,7 @@ class NewGameView(arcade.View):
             # CORRECT: Going through the network client abstraction
             state = self.net.get_state()
             df = state.get_table("countries")
-            return df.sort("id")
+            return df.filter(pl.col("is_playable") == True).sort("id")
         except KeyError:
             print("[NewGameView] 'countries' table not found in state.")
             return pl.DataFrame()
@@ -134,8 +134,44 @@ class NewGameView(arcade.View):
             self.ui.end_panel()
 
     def _start_game(self):
+        if not self.selected_country_id:
+            return
+
         print(f"[NewGameView] Starting game as {self.selected_country_id}")
-        game_view = GameView(self.session, self.config, self.selected_country_id)
+        
+        # --- CALCULATE COUNTRY CENTER ---
+        state = self.net.get_state()
+        start_pos = None
+
+        try:
+            if "regions" in state.tables:
+                df = state.get_table("regions")
+                
+                # 1. Filter for regions owned by this country
+                # We assume the table has columns "x", "y" (or "center_x", "center_y")
+                # Adjust the column names below to match your schema exactly.
+                owned_regions = df.filter(pl.col("owner") == self.selected_country_id)
+                
+                if not owned_regions.is_empty():
+                    # 2. Calculate the mean (average) position
+                    # This gives us the geometric center of the country
+                    avg_x = owned_regions["center_x"].mean() 
+                    avg_y = owned_regions["center_y"].mean()
+                    
+                    if avg_x is not None and avg_y is not None:
+                        start_pos = (float(avg_x), float(avg_y))
+                        print(f"[NewGameView] Calculated start pos: {start_pos}")
+        except Exception as e:
+            print(f"[NewGameView] Error calculating center: {e}")
+
+        # --- LAUNCH GAME ---
+        # Pass the calculated start_pos to the GameView
+        game_view = GameView(
+            self.session, 
+            self.config, 
+            self.selected_country_id, 
+            initial_pos=start_pos
+        )
         self.window.show_view(game_view)
 
     # --- Input Passthrough ---
