@@ -7,44 +7,61 @@ from src.client.ui.theme import GAMETHEME
 
 class EditorLayout(BaseLayout):
     """
-    Manages the ImGui layout for the Editor.
+    Manages the ImGui layout for the Map Editor.
+    
+    Features:
+    - Top Menu Bar (File, View).
+    - Info Overlay (FPS, Keybinds).
+    - Layer Switching (Terrain vs Political).
     """
     def __init__(self, net_client: NetworkClient, viewport_ctrl):
         super().__init__(net_client, viewport_ctrl)
         
         # Map Visualization State
+        # Maps the UI Label -> The internal mode string used by MapRenderer
         self.layer_options = {
             "Physical (Terrain)": "terrain",
             "Political (Countries)": "political",
-            "Debug (Region IDs)": "debug_regions"
+            # "Debug (Region IDs)": "debug_regions" # Future feature
         }
         self.layer_keys = list(self.layer_options.keys())
-        self.current_layer_label = "Physical (Terrain)" 
+        self.current_layer_label = "Political (Countries)" 
 
     def get_current_render_mode(self) -> str:
+        """Called by EditorView to know what to draw."""
         return self.layer_options[self.current_layer_label]
 
     def render(self, selected_region_id: Optional[int], fps: float):
         """Main UI Render Pass."""
+        # 1. Setup Theme
+        self.composer.setup_frame()
+        
+        # 2. Render Static Elements
         self._render_menu_bar()
         self._render_info_overlay(fps)
         
+        # 3. Render Contextual Elements
+        # We fetch state here (Passive Observer) to pass to the Inspector
         state = self.net.get_state()
         
         # Use shared method from BaseLayout
-        self.render_inspector(selected_region_id, state)
+        if selected_region_id is not None:
+             self.render_inspector(selected_region_id, state)
 
     def _render_menu_bar(self):
         if imgui.begin_main_menu_bar():
-            # File Menu
+            # -- File Menu --
             if imgui.begin_menu("File"):
+                # "Ctrl+S" is just visual text here; actual input handled in View
                 if imgui.menu_item("Save Map Data", "Ctrl+S", False)[0]:
                     self.net.request_save()
                 imgui.end_menu()
                 
-            # View Menu
+            # -- View Menu --
             if imgui.begin_menu("View"):
                 imgui.text("Map Layer:")
+                
+                # Custom Combo Box for Layer Selection
                 if imgui.begin_combo("##layer_combo", self.current_layer_label):
                     for label in self.layer_keys:
                         is_selected = (label == self.current_layer_label)
@@ -59,6 +76,9 @@ class EditorLayout(BaseLayout):
             imgui.end_main_menu_bar()
 
     def _render_info_overlay(self, fps: float):
+        """
+        Draws a transparent floating window with debug info.
+        """
         imgui.set_next_window_pos((10, 50), imgui.Cond_.first_use_ever)
         
         flags = (imgui.WindowFlags_.always_auto_resize | 

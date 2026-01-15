@@ -1,5 +1,5 @@
 from imgui_bundle import imgui
-from typing import Optional
+from typing import Optional, Dict, Any
 import polars as pl
 
 from src.client.services.network_client_service import NetworkClient
@@ -14,49 +14,77 @@ from src.client.ui.panels.economy_panel import EconomyPanel
 from src.shared.actions import ActionSetGameSpeed, ActionSetPaused
 
 class GameLayout(BaseLayout):
+    """
+    Manages the complex HUD for the actual Gameplay.
+    
+    Architecture:
+    - Uses a Dictionary Registry ('self.panels') to manage UI modules.
+    - Allows dynamic toggling of any registered panel.
+    - Renders the Top Bar (Resources), Bottom Bar (Time), and Side Panels.
+    """
     def __init__(self, net_client: NetworkClient, player_tag: str, viewport_ctrl):
         super().__init__(net_client, viewport_ctrl)
         
         self.player_tag = player_tag
-        
-        # Sub-panels (Inspector is already in BaseLayout)
-        self.panel_politics = PoliticsPanel()
-        self.panel_military = MilitaryPanel()
-        self.panel_economy = EconomyPanel()
-        
-        # Visibility State
-        self.show_politics = True
-        self.show_military = True
-        self.show_economy = True
-        
         self.map_mode = "political"
+
+        # --- PANEL REGISTRY ---
+        # This structure defines every floating panel in the game.
+        # It links the Controller (Panel Object), Visibility State, Icon, and Color.
+        self.panels: Dict[str, Dict[str, Any]] = {
+            "POL": {
+                "instance": PoliticsPanel(), 
+                "visible": True, 
+                "icon": "POL", 
+                "color": GAMETHEME.col_politics
+            },
+            "MIL": {
+                "instance": MilitaryPanel(), 
+                "visible": True, 
+                "icon": "MIL", 
+                "color": GAMETHEME.col_military
+            },
+            "ECO": {
+                "instance": EconomyPanel(), 
+                "visible": True, 
+                "icon": "ECO", 
+                "color": GAMETHEME.col_economy
+            },
+        }
 
     def render(self, selected_region_id: Optional[int], fps: float):
         """Main UI Render Pass called every frame."""
         self.composer.setup_frame()
         state = self.net.get_state()
 
-        # 1. Render Floating Data Panels
-        if self.show_politics:
-            self.panel_politics.render(self.composer, state)
-            
-        if self.show_military:
-            self.panel_military.render(self.composer, state)
-            
-        if self.show_economy:
-            self.panel_economy.render(self.composer, state, self.player_tag)
+        # 1. Render Registered Panels
+        # We iterate through the registry. If a panel is visible, we render it.
+        for panel_id, data in self.panels.items():
+            if data["visible"]:
+                panel_instance = data["instance"]
+                
+                # Special Case: Economy Panel needs 'player_tag'
+                # In a larger system, we might pass a context object to all panels.
+                if panel_id == "ECO":
+                    panel_instance.render(self.composer, state, self.player_tag)
+                else:
+                    panel_instance.render(self.composer, state)
 
-        # 2. Render HUD Overlays
+        # 2. Render HUD Overlays (Top Bar, Bottom Bar)
         self._render_top_bar(state, fps)
         self._render_toggle_bar()
         self._render_time_controls(state)
         
         # 3. Contextual Inspector (Shows up when a region is clicked)
-        # Use shared method from BaseLayout
+        # Inherited from BaseLayout
         if selected_region_id is not None:
              self.render_inspector(selected_region_id, state)
 
     def _render_toggle_bar(self):
+        """
+        Dynamically generates the buttons to show/hide panels.
+        Placed at the bottom left of the screen.
+        """
         screen_h = imgui.get_main_viewport().size.y
         imgui.set_next_window_pos((10, screen_h - 145)) 
         
@@ -66,23 +94,23 @@ class GameLayout(BaseLayout):
                  imgui.WindowFlags_.no_background)
 
         if imgui.begin("ToggleBar", True, flags)[0]:
-            # --- PANEL TOGGLES ---
-            if self.composer.draw_icon_toggle("POL", GAMETHEME.col_politics, self.show_politics):
-                self.show_politics = not self.show_politics
-            imgui.same_line()
             
-            if self.composer.draw_icon_toggle("MIL", GAMETHEME.col_military, self.show_military):
-                self.show_military = not self.show_military
-            imgui.same_line()
-            
-            if self.composer.draw_icon_toggle("ECO", GAMETHEME.col_economy, self.show_economy):
-                self.show_economy = not self.show_economy
+            # --- DYNAMIC PANEL TOGGLES ---
+            # Automatically create a button for every panel in the registry
+            for panel_id, data in self.panels.items():
+                
+                # Check if button was clicked
+                if self.composer.draw_icon_toggle(data["icon"], data["color"], data["visible"]):
+                    # Toggle visibility state
+                    data["visible"] = not data["visible"]
+                
+                imgui.same_line()
             
             imgui.dummy((0, 8))
             imgui.separator()
             imgui.dummy((0, 2))
             
-            # --- SELECTION MODES ---
+            # --- SELECTION MODE SWITCHES ---
             imgui.text_disabled("SELECT MODE")
             
             # Region Mode Button
@@ -111,9 +139,12 @@ class GameLayout(BaseLayout):
         imgui.pop_style_color(2)
 
     def _render_top_bar(self, state, fps: float):
+        """Renders the top menu bar with Player Tag, Treasury, and FPS."""
         if imgui.begin_main_menu_bar():
+            # Player Identity
             imgui.text_colored(GAMETHEME.col_active_accent, f"[{self.player_tag}]")
             
+            # Treasury (Read from State)
             balance = 0
             try:
                 if "countries" in state.tables:
@@ -128,6 +159,7 @@ class GameLayout(BaseLayout):
             imgui.text(f"Treasury: ${balance:,.0f}".replace(",", " "))
             imgui.separator()
             
+            # Map Mode Switcher
             if imgui.begin_menu("Map Mode"):
                 if imgui.menu_item("Political", "", self.map_mode == "political")[0]:
                     self.map_mode = "political"
@@ -135,6 +167,7 @@ class GameLayout(BaseLayout):
                     self.map_mode = "terrain"
                 imgui.end_menu()
 
+            # FPS Counter (Far Right)
             main_vp_w = imgui.get_main_viewport().size.x
             imgui.set_cursor_pos_x(main_vp_w - 85)
             imgui.text_disabled(f"{fps:.0f} FPS")
@@ -142,6 +175,7 @@ class GameLayout(BaseLayout):
             imgui.end_main_menu_bar()
 
     def _render_time_controls(self, state):
+        """Renders the Play/Pause and Speed controls at the bottom center."""
         viewport = imgui.get_main_viewport()
         screen_w = viewport.size.x
         screen_h = viewport.size.y
@@ -158,6 +192,7 @@ class GameLayout(BaseLayout):
                  imgui.WindowFlags_.no_resize |
                  imgui.WindowFlags_.no_scrollbar)
 
+        # Style specifically for this panel
         imgui.push_style_color(imgui.Col_.window_bg, GAMETHEME.col_panel_bg)
         imgui.push_style_color(imgui.Col_.border, GAMETHEME.col_border_accent)
         imgui.push_style_var(imgui.StyleVar_.window_rounding, 4.0)
@@ -165,6 +200,7 @@ class GameLayout(BaseLayout):
         if imgui.begin("TimeControls", flags=flags):
             t = state.time
 
+            # Date Display
             date_str = t.date_str
             text_w = imgui.calc_text_size(date_str).x
             imgui.set_cursor_pos_x((panel_w - text_w) / 2)
@@ -172,18 +208,24 @@ class GameLayout(BaseLayout):
             
             imgui.dummy((0, 2)) 
 
+            # Controls Centering
             button_w = 42
+            # 6 buttons (Pause + 1x...5x) + 5 spacings
             total_buttons_w = (button_w * 6) + (imgui.get_style().item_spacing.x * 5)
             imgui.set_cursor_pos_x((panel_w - total_buttons_w) / 2)
 
+            # Pause Button
+            # Note: We send Actions to NetworkClient, adhering to Passive Observer
             self._draw_speed_button("||", is_active=t.is_paused, width=button_w, 
                                     callback=lambda: self.net.send_action(ActionSetPaused("local", True)))
             imgui.same_line()
 
+            # Speed Buttons 1x - 5x
             for i in range(1, 6):
                 is_active = (not t.is_paused) and (t.speed_level == i)
                 label = f"{i}x" if i < 3 else (">" * i)
                 
+                # Capture 'i' in lambda closure
                 def _cb(speed=i):
                     self.net.send_action(ActionSetPaused("local", False))
                     self.net.send_action(ActionSetGameSpeed("local", speed))
@@ -196,6 +238,7 @@ class GameLayout(BaseLayout):
         imgui.pop_style_color(2)
 
     def _draw_speed_button(self, label: str, is_active: bool, width: float, callback):
+        """Helper to style time control buttons."""
         if is_active:
             imgui.push_style_color(imgui.Col_.button, GAMETHEME.col_active_accent)
             imgui.push_style_color(imgui.Col_.text, GAMETHEME.text_main)
