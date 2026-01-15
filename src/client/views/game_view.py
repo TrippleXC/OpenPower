@@ -39,7 +39,7 @@ class GameView(BaseImGuiView):
         
         # Updated: Pass self.net to the viewport controller
         self.viewport_ctrl = ViewportController(
-            camera_ctrl=self.cam_ctrl,
+            cam_ctrl=self.cam_ctrl,
             world_camera=self.world_cam,
             map_renderer=self.renderer,
             net_client=self.net,

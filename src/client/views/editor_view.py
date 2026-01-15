@@ -44,7 +44,7 @@ class EditorView(BaseImGuiView):
         # 5. Input Controller
         # Mediates between Raw Input -> Camera Movement / Map Selection
         self.viewport_ctrl = ViewportController(
-            camera_ctrl=self.cam_ctrl,
+            cam_ctrl=self.cam_ctrl,
             world_camera=self.world_cam,
             map_renderer=self.renderer,
             on_selection_change=self.on_selection_changed
