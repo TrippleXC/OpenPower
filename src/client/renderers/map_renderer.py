@@ -2,7 +2,7 @@ import arcade
 import arcade.gl
 import numpy as np
 from array import array
-from typing import Optional, List, Dict, Tuple, Set
+from typing import Optional, List, Dict, Tuple, Union
 from pathlib import Path
 from pyglet import gl
 
@@ -23,7 +23,7 @@ class MapRenderer:
         
         # MAPPINGS
         self.real_to_dense: Dict[int, int] = {}
-        self.dense_to_real: List[int] = []
+        self.dense_to_real: Union[List[int], np.ndarray] = []
 
         # HYBRID STATE
         self.single_select_dense_id = -1
