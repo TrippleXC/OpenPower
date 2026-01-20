@@ -56,6 +56,11 @@ class MainMenuView(arcade.View):
                 next_view = NewGameView(self.session, self.config)
                 self.window.show_view(next_view)
             
+            if self.ui.draw_menu_button("LOAD GAME"):
+                from src.client.views.load_game_view import LoadGameView
+                self.window.show_view(LoadGameView(self.config))
+            # ------------------
+            
             if self.ui.draw_menu_button("MAP EDITOR"):
                 self._launch_editor()
             

@@ -1,8 +1,13 @@
 from typing import List
-from modules.base.systems.time_system import TimeSystem
 from src.engine.interfaces import ISystem
 
-# We import the systems that belong to this module
+# Import Systems
+from modules.base.systems.time_system import TimeSystem
+from modules.base.systems.politics_system import PoliticsSystem
+from modules.base.systems.population_system import PopulationSystem
+from modules.base.systems.military_system import MilitarySystem
+from modules.base.systems.territory_system import TerritorySystem
+from modules.base.systems.ai_system import AISystem
 
 def register() -> List[ISystem]:
     """
@@ -11,8 +16,9 @@ def register() -> List[ISystem]:
     """
     return [
         TimeSystem(),
-        # Order in this list doesn't matter anymore!
-        # The Engine sorts them automatically based on their .dependencies property.
-        #TerritorySystem(),
-        #EconomySystem()
+        PoliticsSystem(),
+        PopulationSystem(),
+        MilitarySystem(),
+        TerritorySystem(),
+        AISystem()
     ]

@@ -59,3 +59,36 @@ class ActionSetPaused(GameAction):
     will stop advancing the game date.
     """
     is_paused: bool
+    
+@dataclass
+class ActionSaveGame(GameAction):
+    """
+    Triggers the server to serialize the current state to disk.
+    """
+    save_name: str
+
+@dataclass
+class ActionBuildUnit(GameAction):
+    """
+    Orders a country to recruit a military unit.
+    Costs Money and Manpower.
+    """
+    country_tag: str
+    unit_type: str # "infantry", "tank", etc.
+    count: int
+
+@dataclass
+class ActionAnnexRegion(GameAction):
+    """
+    Formal annexation of territory (Change Owner).
+    """
+    region_id: int
+    new_owner_tag: str
+
+@dataclass
+class ActionOccupyRegion(GameAction):
+    """
+    Military occupation (Change Controller, not Owner).
+    """
+    region_id: int
+    new_controller_tag: str

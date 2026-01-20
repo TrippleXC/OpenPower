@@ -34,3 +34,13 @@ class EventNewHour(GameEvent):
     """
     hour: int
     total_minutes: int
+    
+@dataclass
+class EventRealSecond(GameEvent):
+    """
+    Fired once per real-world second (approx 1Hz).
+    Used for pacing economy/resource ticks to avoid CPU spikes 
+    while maintaining smooth progression.
+    """
+    game_seconds_passed: float  # How much in-game time happened in this real second?
+    is_paused: bool

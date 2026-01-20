@@ -5,10 +5,10 @@
     "python.analysis.diagnosticMode": "workspace",
     // 2. Перетворюємо попередження на яскраві помилки
     "python.analysis.diagnosticSeverityOverrides": {
-        // "reportUndefinedVariable": "error",
-        // "reportGeneralTypeIssues": "warning",
-        // "reportAttributeAccessIssue": "error",
-        // "reportOptionalMemberAccess": "warning"
+        "reportUndefinedVariable": "error",
+        "reportGeneralTypeIssues": "warning",
+        "reportAttributeAccessIssue": "error",
+        "reportOptionalMemberAccess": "warning"
     },
     // 3. Додаткові зручності для розробки
     "editor.formatOnSave": true,
