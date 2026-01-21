@@ -43,9 +43,9 @@ class MilitarySystem(ISystem):
                 # Deduct Money
                 countries = countries.with_columns(
                     pl.when(pl.col("id") == action.country_tag)
-                    .then(pl.col("money_balance") - (COST * action.count))
-                    .otherwise(pl.col("money_balance"))
-                    .alias("money_balance")
+                    .then(pl.col("money_reserves") - (COST * action.count))
+                    .otherwise(pl.col("money_reserves"))
+                    .alias("money_reserves")
                 )
             
             state.update_table("countries", countries)

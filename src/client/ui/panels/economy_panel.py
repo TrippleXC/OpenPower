@@ -44,7 +44,7 @@ class EconomyPanel:
             if "countries" in state.tables:
                 try:
                     df = state.tables["countries"]
-                    res = df.filter(pl.col("id") == player_tag).select("money_balance")
+                    res = df.filter(pl.col("id") == player_tag).select("money_reserves")
                     if not res.is_empty():
                         pass 
                 except Exception:

@@ -156,7 +156,7 @@ class GameLayout(BaseLayout):
             try:
                 if "countries" in state.tables:
                     df = state.tables["countries"]
-                    res = df.filter(pl.col("id") == self.player_tag).select("money_balance")
+                    res = df.filter(pl.col("id") == self.player_tag).select("money_reserves")
                     if not res.is_empty():
                         balance = res.item(0, 0)
             except Exception:

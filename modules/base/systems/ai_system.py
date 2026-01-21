@@ -27,7 +27,7 @@ class AISystem(ISystem):
         # Filter: Only AI countries (assuming we have a 'is_player' flag or check external map)
         # For MVP, let's assume any country with > 1B money is rich enough to build armies
         
-        rich_countries = countries.filter(pl.col("money_balance") > 1_000_000_000)
+        rich_countries = countries.filter(pl.col("money_reserves") > 1_000_000_000)
         
         for row in rich_countries.iter_rows(named=True):
             tag = row['id']
