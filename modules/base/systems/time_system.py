@@ -4,7 +4,7 @@ from typing import List, Dict
 from src.engine.interfaces import ISystem
 from src.server.state import GameState, GAME_EPOCH
 from src.shared.actions import ActionSetGameSpeed, ActionSetPaused
-from src.shared.events import EventNewDay, EventNewHour
+from src.shared.events import EventNewDay, EventNewHour, EventRealSecond
 
 class TimeSystem(ISystem):
     """
@@ -14,7 +14,7 @@ class TimeSystem(ISystem):
     Responsibility:
     - Reads 'ActionSetGameSpeed' / 'ActionSetPaused'
     - Updates 'state.time' (Year, Month, Day)
-    - Emits 'EventNewDay' and 'EventNewHour'
+    - Emits 'EventNewDay', 'EventNewHour', and 'EventRealSecond'
     """
 
     def __init__(self):
@@ -32,6 +32,10 @@ class TimeSystem(ISystem):
             4: 600.0,
             5: 2400.0
         }
+        
+        # Trackers for the Real Second Heartbeat
+        self.real_sec_timer = 0.0
+        self.last_event_total_minutes = 0
 
     @property
     def id(self) -> str:
@@ -55,20 +59,39 @@ class TimeSystem(ISystem):
             elif isinstance(action, ActionSetPaused):
                 t.is_paused = action.is_paused
 
-        # 2. Check Pause State
+        # 2. Real Second Heartbeat
+        # We process this BEFORE the pause check so the heartbeat continues
+        # even if the game is paused (useful for UI updates).
+        self.real_sec_timer += delta_time
+        
+        if self.real_sec_timer >= 1.0:
+            # Calculate how many in-game minutes passed since the last pulse
+            # If paused, this will naturally be 0.
+            minutes_passed = t.total_minutes - self.last_event_total_minutes
+            game_seconds = minutes_passed * 60
+            
+            state.events.append(EventRealSecond(
+                game_seconds_passed=float(game_seconds),
+                is_paused=t.is_paused
+            ))
+            
+            # Maintain phase and update tracker
+            self.real_sec_timer -= 1.0
+            self.last_event_total_minutes = t.total_minutes
+
+        # 3. Check Pause State
         if t.is_paused:
             return
 
-        # 3. Calculate Time Progression
+        # 4. Calculate Time Progression
         # Get the rate based on current speed level (default to Normal/Level 3 if invalid)
         rate = self.minutes_per_sec.get(t.speed_level, 120.0)
         
         # Accumulate fractional minutes
         t._accumulator += delta_time * rate
         
-        # 4. Integer Step Logic
+        # 5. Integer Step Logic
         # We only update the simulation if at least 1 in-game minute has passed.
-        # This keeps the logic deterministic and efficient.
         if t._accumulator >= 1.0:
             minutes_delta = int(t._accumulator)
             t.total_minutes += minutes_delta
@@ -81,7 +104,6 @@ class TimeSystem(ISystem):
             prev_day = t.day
             
             # Recalculate human-readable fields using Python's robust datetime logic
-            # This handles leap years and month lengths automatically.
             current_dt = GAME_EPOCH + timedelta(minutes=t.total_minutes)
             
             # Update optimized integers
@@ -91,15 +113,12 @@ class TimeSystem(ISystem):
             t.hour = current_dt.hour
             t.minute = current_dt.minute
             
-            # Update UI string (String formatting is slow, so we only do it when time moves)
+            # Update UI string
             t.date_str = current_dt.strftime("%Y-%m-%d %H:%M")
             
-            # 5. Emit Events
-            # Downstream systems (Economy, AI) listen to these events.
-            
+            # 6. Emit Temporal Events
             if t.hour != prev_hour:
                 state.events.append(EventNewHour(t.hour, t.total_minutes))
                 
             if t.day != prev_day:
-                # print(f"[TimeSystem] New Day: {t.date_str}")
                 state.events.append(EventNewDay(t.day, t.month, t.year))
