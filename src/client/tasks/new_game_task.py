@@ -1,5 +1,6 @@
 import time
 import polars as pl
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
@@ -18,33 +19,49 @@ class NewGameTask:
         self.session = session
         self.config = config
         self.player_tag = player_tag
-        
-        # LoadingTask Protocol
         self.progress: float = 0.0
         self.status_text: str = "Preparing Campaign..."
 
     def run(self) -> NewGameContext:
-        # 1. Visual Feedback
+        # 1. Start
         self.status_text = f"Initializing {self.player_tag}..."
-        self.progress = 0.2
-        time.sleep(0.2) # Small delay so user sees the screen change
+        self.progress = 0.1
+        time.sleep(0.2) 
 
-        # 2. Heavy Math (Centroid Calculation)
-        self.status_text = "Calculing capital location..."
-        self.progress = 0.5
+        # 2. Math (CPU)
+        self.status_text = "Calculating strategic positions..."
+        self.progress = 0.4
         
         state = self.session.get_state_snapshot()
         start_pos = None
-        
         try:
             if "regions" in state.tables:
                 df = state.tables["regions"]
-                # Filter locally to find center
                 owned_regions = df.filter(pl.col("owner") == self.player_tag)
                 map_height = self.session.map_data.height
                 start_pos = calculate_centroid(owned_regions, map_height)
         except Exception as e:
-            print(f"[NewGameTask] Error: {e}")
+            print(f"Error: {e}")
 
+        # 3. Disk I/O Warmup (The Performance Trick)
+        # We read the heavy map files here in the thread so they are in RAM
+        # when the main thread asks for them.
+        self.status_text = "Pre-loading map assets..."
+        self.progress = 0.7
+        
+        self._warmup_file("map/regions.png")
+        self._warmup_file("map/terrain.png")
+
+        # 4. Done
+        self.status_text = "Ready."
         self.progress = 1.0
+        # No sleep needed here, LoadingView's new delay will handle the visual transition
+        
         return NewGameContext(self.session, self.player_tag, start_pos)
+
+    def _warmup_file(self, asset_path_str: str):
+        """Reads a file into void just to force OS caching."""
+        path = self.config.get_asset_path(asset_path_str)
+        if path and path.exists():
+            with open(path, "rb") as f:
+                f.read()
