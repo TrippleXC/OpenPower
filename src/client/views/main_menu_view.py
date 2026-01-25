@@ -52,7 +52,7 @@ class MainMenuView(BaseImGuiView):
             
             # -- Menu Buttons (Delegated to NavigationService) --
             
-            if self.ui.draw_menu_button("SINGLEPLAYER ґЄЇҐєїів"):
+            if self.ui.draw_menu_button("SINGLEPLAYER"):
                 # Clean transition: No imports needed here
                 self.nav.show_new_game_screen(self.session, self.config)
             
