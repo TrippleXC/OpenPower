@@ -4,6 +4,7 @@ from typing import Optional, TYPE_CHECKING
 from src.shared.config import GameConfig
 from src.client.services.navigation_service import NavigationService
 from src.client.tasks.startup_task import StartupTask
+from src.client.services.imgui_service import ImGuiService
 
 if TYPE_CHECKING:
     from src.server.session import GameSession
@@ -16,7 +17,16 @@ class MainWindow(arcade.Window):
         self.center_window()
         self.set_minimum_size(800, 600)
         
-        # 1. Initialize Navigation Service
+        # 1. Initialize ImGui Service ONCE (Singleton)
+        # We try to resolve the font path here immediately
+        font_path = config.get_asset_path("fonts/unifont.ttf")
+        if not font_path or not font_path.exists():
+            print(f"[Window] Font not found at {font_path}, using default.")
+            font_path = None
+            
+        self.imgui = ImGuiService(self, font_path=font_path)
+
+        # 2. Initialize Navigation Service
         # This is the "Router" that handles all view switching
         self.nav = NavigationService(self)
         

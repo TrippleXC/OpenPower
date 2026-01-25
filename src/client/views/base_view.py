@@ -8,7 +8,6 @@ class BaseImGuiView(arcade.View):
     """
     def __init__(self):
         super().__init__()
-        self.imgui: Optional[ImGuiService] = None
 
     @property
     def nav(self) -> Any:
@@ -19,21 +18,48 @@ class BaseImGuiView(arcade.View):
         if hasattr(self.window, 'nav'):
             return self.window.nav # type: ignore
         raise AttributeError("NavigationService not found on Window.")
+    
+    # --- THIS PROPERTY IS WHAT FIXES YOUR ERROR ---
+    @property
+    def imgui(self) -> ImGuiService:
+        """Access the singleton service from the window."""
+        # This redirects 'self.imgui' to 'self.window.imgui'
+        if hasattr(self.window, 'imgui'):
+            return self.window.imgui # type: ignore
+        
+        # If this raises, MainWindow didn't initialize the service
+        raise AttributeError("ImGuiService not found on Window.")
 
     def setup_imgui(self):
-        """Must be called by subclass after window is ready."""
-        self.imgui = ImGuiService(self.window)
+        '''
+        Deprecated
+        Initializes ImGui service with Font Configuration from the GameConfig.
+        This is defined ONCE here, satisfying DRY.
+        
+        # 1. Attempt to find GameConfig on the window object
+        font_path = None
+        
+        # We assume your Window class has 'self.game_config'
+        if hasattr(self.window, "game_config"):
+            config = getattr(self.window, "game_config")
+            
+            # Resolve the specific asset path using your Config logic
+            possible_path = config.get_asset_path("fonts/unifont.ttf")
+            
+            if possible_path and possible_path.exists():
+                font_path = possible_path
+            else:
+                print(f"[BaseView] Font not found at {possible_path}, falling back to default.")
+
+        # 2. Inject the resolved path into the Service
+        self.imgui = ImGuiService(self.window, font_path=font_path)
+        '''
+        pass
 
     def on_resize(self, width: int, height: int):
-        if self.imgui:
-            self.imgui.resize(width, height)
-        # Standardize viewport reset to prevent artifacts
-        self.window.ctx.viewport = (0, 0, width, height)
         self.on_game_resize(width, height)
 
     def on_update(self, delta_time: float):
-        if self.imgui:
-            self.imgui.update_time(delta_time)
         self.on_game_update(delta_time)
 
     # --- DRY INPUT ROUTING ---

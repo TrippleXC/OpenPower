@@ -33,51 +33,50 @@ class LoadGameView(BaseImGuiView):
     def on_draw(self):
         self.clear()
         
-        if self.imgui:
-            self.imgui.new_frame()
-            self.ui.setup_frame()
+        self.imgui.new_frame()
+        self.ui.setup_frame()
+        
+        screen_w, screen_h = self.window.get_size()
+        
+        if self.ui.begin_centered_panel("Load Game", screen_w, screen_h, w=500, h=600):
+            self.ui.draw_title("LOAD GAME")
+            from imgui_bundle import imgui
             
-            screen_w, screen_h = self.window.get_size()
+            # --- Save List ---
+            imgui.begin_child("SaveList", (0, 400), True)
+            if not self.save_list:
+                imgui.text_disabled("No saves found.")
+            else:
+                for save in self.save_list:
+                    name = save['name']
+                    date = save['timestamp'][:16].replace("T", " ")
+                    label = f"{name}  |  {date}"
+                    if imgui.selectable(label, self.selected_save_name == name)[0]:
+                        self.selected_save_name = name
+            imgui.end_child()
+            imgui.dummy((0, 20))
             
-            if self.ui.begin_centered_panel("Load Game", screen_w, screen_h, w=500, h=600):
-                self.ui.draw_title("LOAD GAME")
-                from imgui_bundle import imgui
+            # --- Buttons ---
+            
+            # BACK BUTTON: Use Router
+            if imgui.button("BACK", (100, 40)):
+                # Get session from window if it exists, or None
+                current_session = getattr(self.window, 'session', None)
+                self.nav.show_main_menu(current_session, self.config)
                 
-                # --- Save List ---
-                imgui.begin_child("SaveList", (0, 400), True)
-                if not self.save_list:
-                    imgui.text_disabled("No saves found.")
-                else:
-                    for save in self.save_list:
-                        name = save['name']
-                        date = save['timestamp'][:16].replace("T", " ")
-                        label = f"{name}  |  {date}"
-                        if imgui.selectable(label, self.selected_save_name == name)[0]:
-                            self.selected_save_name = name
-                imgui.end_child()
-                imgui.dummy((0, 20))
-                
-                # --- Buttons ---
-                
-                # BACK BUTTON: Use Router
-                if imgui.button("BACK", (100, 40)):
-                    # Get session from window if it exists, or None
-                    current_session = getattr(self.window, 'session', None)
-                    self.nav.show_main_menu(current_session, self.config)
-                    
-                imgui.same_line()
-                avail_w = imgui.get_content_region_avail().x
-                imgui.set_cursor_pos_x(imgui.get_cursor_pos_x() + avail_w - 150)
-                
-                if self.selected_save_name:
-                    if imgui.button("LOAD", (150, 40)):
-                        self._load_selected_save()
-                else:
-                    imgui.begin_disabled()
-                    imgui.button("LOAD", (150, 40))
-                    imgui.end_disabled()
+            imgui.same_line()
+            avail_w = imgui.get_content_region_avail().x
+            imgui.set_cursor_pos_x(imgui.get_cursor_pos_x() + avail_w - 150)
+            
+            if self.selected_save_name:
+                if imgui.button("LOAD", (150, 40)):
+                    self._load_selected_save()
+            else:
+                imgui.begin_disabled()
+                imgui.button("LOAD", (150, 40))
+                imgui.end_disabled()
 
-                self.ui.end_panel()
+            self.ui.end_panel()
                 
             self.imgui.render()
 

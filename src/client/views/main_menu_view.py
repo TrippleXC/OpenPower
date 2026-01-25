@@ -34,21 +34,14 @@ class MainMenuView(BaseImGuiView):
     def on_show_view(self):
         print("[MainMenuView] Entered Main Menu")
         self.window.background_color = GAMETHEME.col_black
-        
-        # Ensure ImGui is set up (from BaseImGuiView)
-        if not self.imgui:
-            self.setup_imgui()
 
     def on_draw(self):
         self.clear()
-        
-        # BaseImGuiView doesn't automatically call new_frame/render 
-        # to allow flexibility, so we do it here.
-        if self.imgui:
-            self.imgui.new_frame()
-            self.ui.setup_frame()
-            self._render_menu_window()
-            self.imgui.render()
+
+        self.imgui.new_frame()
+        self.ui.setup_frame()
+        self._render_menu_window()
+        self.imgui.render()
 
     def _render_menu_window(self):
         screen_w, screen_h = self.window.get_size()
@@ -59,7 +52,7 @@ class MainMenuView(BaseImGuiView):
             
             # -- Menu Buttons (Delegated to NavigationService) --
             
-            if self.ui.draw_menu_button("SINGLEPLAYER"):
+            if self.ui.draw_menu_button("SINGLEPLAYER ґЄЇҐєїів"):
                 # Clean transition: No imports needed here
                 self.nav.show_new_game_screen(self.session, self.config)
             

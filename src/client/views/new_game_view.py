@@ -44,19 +44,14 @@ class NewGameView(BaseImGuiView):
 
     def on_show_view(self):
         self.window.background_color = arcade.color.BLACK_OLIVE
-        # Ensure ImGui is ready (BaseImGuiView hook)
-        if not self.imgui:
-            self.setup_imgui()
 
     def on_draw(self):
         self.clear()
         
-        # Use BaseImGuiView's ImGui instance
-        if self.imgui:
-            self.imgui.new_frame()
-            self.ui.setup_frame()
-            self._render_ui()
-            self.imgui.render()
+        self.imgui.new_frame()
+        self.ui.setup_frame()
+        self._render_ui()
+        self.imgui.render()
 
     def _render_ui(self):
         screen_w, screen_h = self.window.get_size()

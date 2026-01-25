@@ -1,6 +1,10 @@
 import arcade
+from pathlib import Path
+from typing import Optional
 from imgui_bundle import imgui
 from imgui_bundle.python_backends.opengl_backend_programmable import ProgrammablePipelineRenderer as OpenGL3Backend
+
+from src.client.ui.font_loader import FontLoader
 
 class ImGuiService:
     """
@@ -16,7 +20,7 @@ class ImGuiService:
         3. Reporting whether ImGui has 'captured' an input event to prevent fall-through.
     """
 
-    def __init__(self, window: arcade.Window):
+    def __init__(self, window: arcade.Window, font_path: Optional[Path] = None):
         self.window = window
         
         # Create a dedicated ImGui context. We do not use the global context to ensure
@@ -28,6 +32,12 @@ class ImGuiService:
         # Enable Keyboard Nav: Allows using the editor without a mouse (accessibility/speed).
         self.io.config_flags |= imgui.ConfigFlags_.docking_enable
         self.io.config_flags |= imgui.ConfigFlags_.nav_enable_keyboard
+
+        # --- FONT LOADING ---
+        # The service checks if a path was provided, but doesn't decide *which* path.
+        if font_path:
+            # Set load_cjk=True here if you need Chinese/Japanese support
+            FontLoader.load_primary_font(self.io, font_path, size_pixels=14.0, load_cjk=False)
 
         # Initialize the programmable pipeline renderer (Modern OpenGL).
         # This handles the shader compilation and VBO management hidden from the high-level logic.

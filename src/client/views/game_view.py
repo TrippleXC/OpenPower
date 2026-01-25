@@ -1,7 +1,7 @@
 import arcade
 from src.shared.config import GameConfig
 from src.client.services.network_client_service import NetworkClient
-from src.client.services.imgui_service import ImGuiService
+#from src.client.services.imgui_service import ImGuiService removed and deprecated
 from src.client.views.base_view import BaseImGuiView
 
 from src.client.renderers.map_renderer import MapRenderer
@@ -17,9 +17,6 @@ class GameView(BaseImGuiView):
         super().__init__()
         self.config = config
         self.net = NetworkClient(session)
-        
-        # FIX 2: Explicitly annotate type here so Pylance knows it's not None anymore
-        self.imgui: ImGuiService = ImGuiService(self.window)
         
         map_path = config.get_asset_path("map/regions.png")
         terrain_path = config.get_asset_path("map/terrain.png")
