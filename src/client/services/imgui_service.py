@@ -23,33 +23,40 @@ class ImGuiService:
     def __init__(self, window: arcade.Window, font_path: Optional[Path] = None):
         self.window = window
         
-        # Create a dedicated ImGui context. We do not use the global context to ensure
-        # that if we have multiple windows or overlays later, their states remain isolated.
+        # Create a dedicated ImGui context
         self._context = imgui.create_context()
         self.io = imgui.get_io()
         
-        # Enable Docking: Essential for complex editors where users want to rearrange panels.
-        # Enable Keyboard Nav: Allows using the editor without a mouse (accessibility/speed).
+        # Enable Docking and Keyboard Nav
         self.io.config_flags |= imgui.ConfigFlags_.docking_enable
         self.io.config_flags |= imgui.ConfigFlags_.nav_enable_keyboard
 
         # --- FONT LOADING ---
-        # The service checks if a path was provided, but doesn't decide *which* path.
-        if font_path:
-            # Set load_cjk=True here if you need Chinese/Japanese support
-            FontLoader.load_primary_font(self.io, font_path, size_pixels=14.0, load_cjk=False)
+        pixel_ratio = self.window.get_pixel_ratio()
 
-        # Initialize the programmable pipeline renderer (Modern OpenGL).
-        # This handles the shader compilation and VBO management hidden from the high-level logic.
+        if font_path:
+            # 1. Load Big: Load texture at physical resolution (e.g., 28px for Retina)
+            base_font_size = 16.0
+            FontLoader.load_primary_font(
+                self.io, 
+                font_path, 
+                size_pixels=base_font_size * pixel_ratio, 
+                load_cjk=False
+            )
+
+            # 2. Scale Down: Use the new Style API to scale the UI back to logical size
+            #    Old API: self.io.font_global_scale = 1.0 / pixel_ratio  <-- REMOVED
+            #    New API: Use imgui.get_style().font_scale_main
+            style = imgui.get_style()
+            style.font_scale_main = 1.0 / pixel_ratio
+
+        # Initialize the programmable pipeline renderer
         self.renderer = OpenGL3Backend()
 
         # Input mapping cache
         self.key_map = self._create_key_map()
         
-        # State tracking to prevent rendering before a frame is started
         self._frame_started = False
-        
-        # Store delta time here to decouple Update from Render
         self._current_delta_time = 1.0 / 60.0
 
     def resize(self, width: int, height: int):

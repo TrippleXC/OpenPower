@@ -42,7 +42,7 @@ class FontLoader:
 
         # 3. Setup Config
         font_cfg = imgui.ImFontConfig()
-        font_cfg.oversample_h = 2
+        font_cfg.oversample_h = 1
         font_cfg.oversample_v = 1
         font_cfg.pixel_snap_h = True
         
