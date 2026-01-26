@@ -35,8 +35,8 @@ class ImGuiService:
         pixel_ratio = self.window.get_pixel_ratio()
 
         if font_path:
-            # 1. Load Big: Load texture at physical resolution (e.g., 28px for Retina)
-            base_font_size = 16.0
+            # 1. Load Big: Load texture at physical resolution (e.g., 28px)
+            base_font_size = 14.0
             FontLoader.load_primary_font(
                 self.io, 
                 font_path, 

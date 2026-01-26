@@ -19,7 +19,7 @@ class MainWindow(arcade.Window):
         
         # 1. Initialize ImGui Service ONCE (Singleton)
         # We try to resolve the font path here immediately
-        font_path = config.get_asset_path("fonts/unifont.ttf")
+        font_path = config.get_asset_path("fonts/main_font.ttf")
         if not font_path or not font_path.exists():
             print(f"[Window] Font not found at {font_path}, using default.")
             font_path = None
