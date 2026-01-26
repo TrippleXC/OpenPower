@@ -146,3 +146,19 @@ class ViewportController:
 
         self.renderer.set_highlight(highlight_ids)
         self.on_selection_change(region_id)
+
+    def get_region_at(self, screen_x: float, screen_y: float) -> Optional[int]:
+        """
+        Public API for UI.
+        Converts screen coords -> world coords and asks the Renderer.
+        """
+        try:
+            # 1. Переводимо екранні координати у світові (враховуючи зум і камеру)
+            world_pos = self.world_cam.unproject((screen_x, screen_y))
+            
+            # 2. Викликаємо ту саму функцію MapRenderer, яку ти мені показав
+            region_id = self.renderer.get_region_id_at_world_pos(world_pos.x, world_pos.y)
+            
+            return region_id if region_id > 0 else None
+        except Exception:
+            return None

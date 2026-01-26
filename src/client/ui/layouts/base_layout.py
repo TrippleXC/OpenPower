@@ -4,6 +4,7 @@ from src.client.services.network_client_service import NetworkClient
 from src.client.ui.panels.region_inspector import RegionInspectorPanel
 from src.client.ui.composer import UIComposer
 from src.client.ui.theme import GAMETHEME
+from imgui_bundle import imgui
 
 class BaseLayout:
     """
@@ -35,13 +36,18 @@ class BaseLayout:
         # using the global GAMETHEME configuration.
         self.composer = UIComposer(GAMETHEME)
         
+        # Store references to dynamically created panels if needed
+        self.panels: Dict[str, Dict[str, Any]] = {}
+
+        # PERSISTENT UI STATE:
+        # We store the region ID at the moment of the right-click to prevent 
+        # the menu from updating its content as the mouse moves.
+        self._menu_hit_id: Optional[int] = None
+
         # Instantiate the Inspector Panel once. 
         # This allows the panel to maintain its internal state (like scroll position 
         # or cached layout data) even when the selected region changes.
-        self.inspector = RegionInspectorPanel()
-
-        # Store references to dynamically created panels if needed
-        self.panels: Dict[str, Dict[str, Any]] = {}
+        self.register_panel("INSPECTOR", RegionInspectorPanel(), visible=False)
 
     def register_panel(self, panel_id: str, instance: Any, visible: bool = True, **metadata):
         """Registers a panel for automatic rendering and management."""
@@ -71,29 +77,62 @@ class BaseLayout:
             if still_open is False:
                 data["visible"] = False
 
+    def _render_context_menu(self, current_hovered_id: Optional[int]):
+        """
+        Renders the right-click menu. 
+        Captures the 'current_hovered_id' only at the moment of the click 
+        to 'lock' the menu to the target region.
+        """
+        # Step 1: Capture the state exactly when the click is released
+        if self.composer.is_background_clicked():
+            # "Freeze" the ID for the duration of this popup session
+            self._menu_hit_id = current_hovered_id
+            self.composer.open_popup("global_map_context")
+
+        # 
+
+        # Step 2: Use the frozen ID inside the popup
+        if self.composer.begin_popup("global_map_context"):
+            
+            # We reference self._menu_hit_id instead of the dynamic argument
+            target_id = self._menu_hit_id
+
+            if target_id is not None:
+                imgui.text_disabled(f"Target: Region #{target_id}")
+                
+                if self.composer.draw_menu_item("View Details", "I"):
+                    self.panels["INSPECTOR"]["visible"] = True
+                    # Force selection to sync visuals with the inspected region
+                    self.viewport_ctrl.select_region_by_id(target_id)
+                
+                if self.composer.draw_menu_item("Jump to Camera"):
+                    self.viewport_ctrl.focus_on_region(target_id)
+                
+                imgui.separator()
+
+            if self.composer.begin_menu("Map Mode"):
+                if self.composer.draw_menu_item("Political"):
+                    if hasattr(self, 'map_mode'): setattr(self, 'map_mode', "political")
+                if self.composer.draw_menu_item("Terrain"):
+                    if hasattr(self, 'map_mode'): setattr(self, 'map_mode', "terrain")
+                self.composer.end_menu()
+
+            imgui.separator()
+            if self.composer.draw_menu_item("Close All Panels"):
+                for p in self.panels.values(): p["visible"] = False
+
+            self.composer.end_popup()
+        else:
+            # Optional: Clear the hit ID when the popup is closed
+            # to avoid stale data on the next frame.
+            pass
+
     def is_panel_visible(self, panel_id: str) -> bool:
         return self.panels.get(panel_id, {}).get("visible", False)
 
     def toggle_panel(self, panel_id: str):
         if panel_id in self.panels:
             self.panels[panel_id]["visible"] = not self.panels[panel_id]["visible"]
-
-    def render_inspector(self, selected_region_id: Optional[int], state: Any):
-        """
-        Renders the Region Inspector panel into the current UI frame.
-
-        Args:
-            selected_region_id: The ID of the currently selected region (if any).
-            state: The current GameState object used to populate panel data.
-        """
-        # We pass self._on_focus_region as a callback.
-        # This allows the Inspector UI to remain "dumb"—it doesn't need to know
-        # how to move cameras, it just signals that the user clicked 'Focus'.
-        self.inspector.render(
-            selected_region_id, 
-            state, 
-            self._on_focus_region
-        )
 
     def _on_focus_region(self, region_id: int, image_x: float, image_y: float):
         """

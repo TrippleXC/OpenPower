@@ -3,6 +3,7 @@ from src.shared.config import GameConfig
 from src.client.services.network_client_service import NetworkClient
 #from src.client.services.imgui_service import ImGuiService removed and deprecated
 from src.client.views.base_view import BaseImGuiView
+from typing import Optional
 
 from src.client.renderers.map_renderer import MapRenderer
 from src.client.ui.layouts.game_layout import GameLayout
@@ -13,7 +14,7 @@ from src.client.ui.theme import GAMETHEME
 
 class GameView(BaseImGuiView):
     # FIX 1: Update type hint to accept None (tuple[...] | None)
-    def __init__(self, session, config, player_tag, initial_pos: tuple[float, float] | None = None):
+    def __init__(self, session, config: GameConfig, player_tag: str, initial_pos: Optional[tuple[float, float]] = None):
         super().__init__()
         self.config = config
         self.net = NetworkClient(session)
@@ -29,12 +30,7 @@ class GameView(BaseImGuiView):
         
         self.world_cam = arcade.Camera2D()
  
-        if initial_pos:
-            start_x, start_y = initial_pos
-        else:
-            start_x = self.renderer.width / 2
-            start_y = self.renderer.height / 2
-            
+        start_x, start_y = initial_pos if initial_pos else (self.renderer.width / 2, self.renderer.height / 2)
         self.cam_ctrl = CameraController((start_x, start_y))
         
         self.viewport_ctrl = ViewportController(
@@ -76,9 +72,20 @@ class GameView(BaseImGuiView):
         mode = "political" if self.layout.map_mode == "political" else "terrain"
         self.renderer.draw(mode=mode)
         
-        # 3. Draw UI
+        # 3. Calculate UI Context (Hovered Region)
+        # We need to know what region is under the mouse right now for the context menu
+        # Accessing private _mouse_x/y is the most reliable way in Arcade for instant state
+        hovered_id = self.viewport_ctrl.get_region_at(self.window._mouse_x, self.window._mouse_y)
+
+        # 4. Draw UI
         self.window.use()
-        self.layout.render(self.selected_region_id, self.imgui.io.framerate)
+        
+        # <--- FIX 2: Passed all 3 required arguments
+        self.layout.render(
+            self.selected_region_id, 
+            hovered_id, 
+            self.imgui.io.framerate
+        )
         
         self.imgui.render()
 

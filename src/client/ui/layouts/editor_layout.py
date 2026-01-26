@@ -39,15 +39,10 @@ class EditorLayout(BaseLayout):
         # 2. Render Static Elements
         self._render_menu_bar()
         self._render_info_overlay(fps)
-        
-        # 3. Render Contextual Elements
-        # We fetch state here (Passive Observer) to pass to the Inspector
-        state = self.net.get_state()
-        
-        # Use shared method from BaseLayout
-        if selected_region_id is not None:
-             self.render_inspector(selected_region_id, state)
 
+        # 1. Process Global Input (Right-Click Menu)
+        self._render_context_menu(selected_region_id)
+        
     def _render_menu_bar(self):
         if imgui.begin_main_menu_bar():
             # -- File Menu --

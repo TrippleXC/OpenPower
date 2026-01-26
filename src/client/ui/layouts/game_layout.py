@@ -2,6 +2,7 @@ from imgui_bundle import imgui
 from typing import Optional, Dict, Any
 import polars as pl
 
+from src.server.state import GameState
 from src.client.services.network_client_service import NetworkClient
 from src.client.ui.layouts.base_layout import BaseLayout
 from src.client.ui.theme import GAMETHEME
@@ -37,31 +38,38 @@ class GameLayout(BaseLayout):
         self.register_panel("ECO", EconomyPanel(), icon="ECO", color=GAMETHEME.col_economy)
         self.register_panel("DEM", DemographicsPanel(), icon="DEM", color=GAMETHEME.col_demographics)
 
-    def render(self, selected_region_id: Optional[int], fps: float):
-        """Main UI Render Pass called every frame."""
+    def render(self, selected_region_id: Optional[int], hovered_region_id: Optional[int], fps: float):
+        """
+        Main render loop. 
+        Takes both selected_region_id (left click) and hovered_region_id (under mouse)
+        to handle context-sensitive actions properly.
+        """
         self.composer.setup_frame()
         state = self.net.get_state()
 
-        # 1. Render Registered Panels
-        self._render_panels(state, player_tag=self.player_tag)
+        # Context menu now relies on hovered_region_id for right-click targeting.
+        self._render_context_menu(hovered_region_id)
 
-        # 2. Render HUD Overlays (Top Bar, Bottom Bar)
+        # Main panel rendering uses the persistent selected_region_id.
+        self._render_panels(
+            state, 
+            player_tag=self.player_tag, 
+            selected_region_id=selected_region_id,
+            on_focus_request=self._on_focus_region
+        )
+
         self._render_top_bar(state, fps)
         self._render_toggle_bar()
         self._render_time_controls(state)
-        
-        # 3. Contextual Inspector (Shows up when a region is clicked)
-        # Inherited from BaseLayout
-        if selected_region_id is not None:
-             self.render_inspector(selected_region_id, state)
 
     def _render_toggle_bar(self):
         """
-        Dynamically generates the buttons to show/hide panels.
-        Placed at the bottom left of the screen.
+        Dynamic panel switcher at the bottom-left.
+        Uses metadata to determine which panels get a button.
         """
         screen_h = imgui.get_main_viewport().size.y
-        imgui.set_next_window_pos((10, screen_h - 145)) 
+        # Cond_.always ensures it stays fixed even if you resize the window
+        imgui.set_next_window_pos((10, screen_h - 155), imgui.Cond_.always)
         
         flags = (imgui.WindowFlags_.no_decoration | 
                  imgui.WindowFlags_.no_move | 
@@ -69,33 +77,24 @@ class GameLayout(BaseLayout):
                  imgui.WindowFlags_.no_background)
 
         if imgui.begin("ToggleBar", True, flags)[0]:
-            
-            # --- DYNAMIC PANEL TOGGLES ---
-            # Automatically create a button for every panel in the registry
+            # Draw buttons for gameplay panels (POL, ECO, etc.)
             for panel_id, data in self.panels.items():
+                if "icon" not in data:
+                    continue
                 
-                # Check if button was clicked
+                # Check if the toggle button was clicked
                 if self.composer.draw_icon_toggle(data["icon"], data["color"], data["visible"]):
-                    # Toggle visibility state
                     data["visible"] = not data["visible"]
                 
                 imgui.same_line()
             
             imgui.dummy((0, 8))
             imgui.separator()
-            imgui.dummy((0, 2))
             
-            # --- SELECTION MODE SWITCHES ---
-            imgui.text_disabled("SELECT MODE")
-            
-            # Region Mode Button
-            is_reg = self.viewport_ctrl.selection_mode == SelectionMode.REGION
-            self._draw_mode_button("REG", is_reg, lambda: self.viewport_ctrl.set_selection_mode(SelectionMode.REGION))
-            imgui.same_line()
-
-            # Country Mode Button
-            is_ctry = self.viewport_ctrl.selection_mode == SelectionMode.COUNTRY
-            self._draw_mode_button("CTRY", is_ctry, lambda: self.viewport_ctrl.set_selection_mode(SelectionMode.COUNTRY))
+            # Regional Inspector toggle (with a generic icon)
+            insp_visible = self.panels["INSPECTOR"]["visible"]
+            if self.composer.draw_icon_toggle("INSP", GAMETHEME.col_info, insp_visible):
+                self.panels["INSPECTOR"]["visible"] = not insp_visible
 
         imgui.end()
 

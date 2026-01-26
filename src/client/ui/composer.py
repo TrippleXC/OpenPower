@@ -94,3 +94,55 @@ class UIComposer:
         col = imgui.get_color_u32((*color[:3], 1.0) if is_active else self.theme.text_dim)
         imgui.get_window_draw_list().add_rect_filled((p.x, pm.y - 4), (pm.x, pm.y), col)
         return clicked
+    
+    # --- POPUP & MENU METHODS ---
+
+    def begin_context_menu(self, str_id="map_context"):
+        """
+        Triggers a popup when right-clicking the background/window.
+        ImGui handles the mouse trigger internally via PopupFlags.
+        """
+        return imgui.begin_popup_context_window(str_id, imgui.PopupFlags_.mouse_button_right)
+
+    def open_popup(self, str_id: str):
+        """Manually triggers a popup to open."""
+        imgui.open_popup(str_id)
+
+    def begin_popup(self, str_id: str):
+        """Starts rendering the popup content if it was opened."""
+        return imgui.begin_popup(str_id)
+
+    def end_popup(self):
+        """Ends the current popup context."""
+        imgui.end_popup()
+
+    def is_background_clicked(self) -> bool:
+        """
+        Detects a clean right-click release on the background.
+        Calculates the drag delta to ensure the user wasn't panning the map.
+        """
+        # Ensure we are not clicking on an ImGui window.
+        if imgui.get_io().want_capture_mouse:
+            return False
+
+        # Only trigger on release to differentiate between press-to-drag and click.
+        if imgui.is_mouse_released(imgui.MouseButton_.right):
+            # Check if the mouse moved significantly since the button was pressed.
+            # Using 5.0 as a standard pixel threshold for unintended movement.
+            drag_delta = imgui.get_mouse_drag_delta(imgui.MouseButton_.right)
+            drag_dist_sq = drag_delta.x**2 + drag_delta.y**2
+            
+            return drag_dist_sq < 25.0  # 5 pixels squared
+            
+        return False
+
+    def begin_menu(self, label: str):
+        return imgui.begin_menu(label)
+
+    def end_menu(self):
+        imgui.end_menu()
+
+    def draw_menu_item(self, label: str, shortcut: str = ""):
+        """Returns True if the user clicked the item."""
+        clicked, _ = imgui.menu_item(label, shortcut, False, True)
+        return clicked
