@@ -4,8 +4,8 @@ from src.server.state import GameState
 from src.client.ui.theme import GAMETHEME
 
 class PoliticsPanel:
-    def render(self, composer: UIComposer, state: GameState):
-        expanded, _ = composer.begin_panel("POLITICS", 10, 100, 240, 520)
+    def render(self, composer: UIComposer, state: GameState, **kwargs):
+        expanded, opened = composer.begin_panel("POLITICS", 10, 100, 240, 520, is_visible=True)
         
         if expanded:
             # 1. Constitutional Form
@@ -63,3 +63,4 @@ class PoliticsPanel:
                 pass
 
         composer.end_panel()
+        return opened

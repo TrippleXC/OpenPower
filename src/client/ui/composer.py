@@ -9,12 +9,29 @@ class UIComposer:
     def setup_frame(self):
         self.theme.apply_global_styles()
 
-    def begin_panel(self, name, x, y, w, h, closable=False):
+    def begin_panel(self, name, x, y, w, h, is_visible=True):
+        """
+        Starts a new ImGui window.
+        Returns: (expanded, opened)
+        - expanded: True if the window is not collapsed.
+        - opened: False if the user clicked the 'X' close button.
+        """
         imgui.set_next_window_pos((x, y), imgui.Cond_.first_use_ever)
         imgui.set_next_window_size((w, h), imgui.Cond_.first_use_ever)
-        return imgui.begin(name, closable, imgui.WindowFlags_.no_collapse)
+        
+        # We pass is_visible as a reference-like boolean for the close button
+        expanded, opened = imgui.begin(name, is_visible, imgui.WindowFlags_.no_collapse)
+        return expanded, opened
 
-    def end_panel(self): imgui.end()
+    def end_panel(self): 
+        imgui.end()
+
+    def show_if(self, condition: bool):
+        """
+        A helper for conditional rendering (feature flags).
+        Usage: if composer.show_if(FEATURE_READY): ...
+        """
+        return condition
 
     def begin_centered_panel(self, name, sw, sh, w=300, h=400):
         imgui.set_next_window_pos(((sw - w)/2, (sh - h)/2))

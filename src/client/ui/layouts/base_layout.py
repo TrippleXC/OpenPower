@@ -1,5 +1,5 @@
 import arcade
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from src.client.services.network_client_service import NetworkClient
 from src.client.ui.panels.region_inspector import RegionInspectorPanel
 from src.client.ui.composer import UIComposer
@@ -39,6 +39,44 @@ class BaseLayout:
         # This allows the panel to maintain its internal state (like scroll position 
         # or cached layout data) even when the selected region changes.
         self.inspector = RegionInspectorPanel()
+
+        # Store references to dynamically created panels if needed
+        self.panels: Dict[str, Dict[str, Any]] = {}
+
+    def register_panel(self, panel_id: str, instance: Any, visible: bool = True, **metadata):
+        """Registers a panel for automatic rendering and management."""
+        self.panels[panel_id] = {
+            "instance": instance,
+            "visible": visible,
+            **metadata
+        }
+    
+    def _render_panels(self, state: Any, **extra_ctx):
+        """
+        Iterates through all registered panels and renders them if visible.
+        Handles the 'closed' signal from ImGui automatically.
+        """
+        for panel_id, data in self.panels.items():
+            if not data["visible"]:
+                continue
+
+            # Composition: We delegate the actual UI drawing to the panel instance
+            # Most panels need (composer, state), some need extra context (like player_tag)
+            panel_instance = data["instance"]
+            
+            # Pass composer and state as base requirements, merge with extra context
+            still_open = panel_instance.render(self.composer, state, **extra_ctx)
+
+            # If the panel returns False (user clicked 'X'), we hide it
+            if still_open is False:
+                data["visible"] = False
+
+    def is_panel_visible(self, panel_id: str) -> bool:
+        return self.panels.get(panel_id, {}).get("visible", False)
+
+    def toggle_panel(self, panel_id: str):
+        if panel_id in self.panels:
+            self.panels[panel_id]["visible"] = not self.panels[panel_id]["visible"]
 
     def render_inspector(self, selected_region_id: Optional[int], state: Any):
         """

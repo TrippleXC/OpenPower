@@ -32,32 +32,10 @@ class GameLayout(BaseLayout):
         # --- PANEL REGISTRY ---
         # This structure defines every floating panel in the game.
         # It links the Controller (Panel Object), Visibility State, Icon, and Color.
-        self.panels: Dict[str, Dict[str, Any]] = {
-            "POL": {
-                "instance": PoliticsPanel(), 
-                "visible": True, 
-                "icon": "POL", 
-                "color": GAMETHEME.col_politics
-            },
-            "MIL": {
-                "instance": MilitaryPanel(), 
-                "visible": True, 
-                "icon": "MIL", 
-                "color": GAMETHEME.col_military
-            },
-            "ECO": {
-                "instance": EconomyPanel(), 
-                "visible": True, 
-                "icon": "ECO", 
-                "color": GAMETHEME.col_economy
-            },
-            "DEM": {
-                "instance": DemographicsPanel(), 
-                "visible": True, 
-                "icon": "DEM", 
-                "color": GAMETHEME.col_demographics
-            },
-        }
+        self.register_panel("POL", PoliticsPanel(), icon="POL", color=GAMETHEME.col_politics)
+        self.register_panel("MIL", MilitaryPanel(), icon="MIL", color=GAMETHEME.col_military)
+        self.register_panel("ECO", EconomyPanel(), icon="ECO", color=GAMETHEME.col_economy)
+        self.register_panel("DEM", DemographicsPanel(), icon="DEM", color=GAMETHEME.col_demographics)
 
     def render(self, selected_region_id: Optional[int], fps: float):
         """Main UI Render Pass called every frame."""
@@ -65,17 +43,7 @@ class GameLayout(BaseLayout):
         state = self.net.get_state()
 
         # 1. Render Registered Panels
-        # We iterate through the registry. If a panel is visible, we render it.
-        for panel_id, data in self.panels.items():
-            if data["visible"]:
-                panel_instance = data["instance"]
-                
-                # Special Case: Economy Panel needs 'player_tag'
-                # In a larger system, we might pass a context object to all panels.
-                if panel_id in ["ECO", "DEM"]:
-                    panel_instance.render(self.composer, state, self.player_tag)
-                else:
-                    panel_instance.render(self.composer, state)
+        self._render_panels(state, player_tag=self.player_tag)
 
         # 2. Render HUD Overlays (Top Bar, Bottom Bar)
         self._render_top_bar(state, fps)

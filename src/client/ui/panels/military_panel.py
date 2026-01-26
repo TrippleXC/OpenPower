@@ -3,10 +3,10 @@ from src.client.ui.composer import UIComposer
 from src.client.ui.theme import GAMETHEME
 
 class MilitaryPanel:
-    def render(self, composer: UIComposer, state):
+    def render(self, composer: UIComposer, state, **kwargs):
         # Position: Left-Center (offset from Politics)
         # We use a unique name "MILITARY" so ImGui tracks it separately
-        expanded, _ = composer.begin_panel("MILITARY", 260, 100, 250, 520)
+        expanded, opened = composer.begin_panel("MILITARY", 260, 100, 250, 520, is_visible=True)
         
         if expanded:
             # 1. Conventional Forces
@@ -76,6 +76,7 @@ class MilitaryPanel:
             imgui.button("WAR LIST", (-1, 0))
 
         composer.end_panel()
+        return opened
 
     def _draw_row(self, label, count, rank):
         imgui.table_next_row()

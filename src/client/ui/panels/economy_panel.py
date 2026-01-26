@@ -4,10 +4,10 @@ from src.client.ui.composer import UIComposer
 from src.client.ui.theme import GAMETHEME
 
 class EconomyPanel:
-    def render(self, composer: UIComposer, state, player_tag: str):
+    def render(self, composer: UIComposer, state, player_tag: str, **kwargs):
         # Position: Right Side
         vp_w = imgui.get_main_viewport().size.x
-        expanded, _ = composer.begin_panel("ECONOMY", vp_w - 280, 100, 260, 450)
+        expanded, opened = composer.begin_panel("ECONOMY", vp_w - 280, 100, 260, 450, is_visible=True)
         
         if expanded:
             # 1. Economic Model
@@ -73,3 +73,4 @@ class EconomyPanel:
             imgui.button("TRADE", (-1, 35))
 
         composer.end_panel()
+        return opened

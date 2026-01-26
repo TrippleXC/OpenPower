@@ -8,9 +8,9 @@ class DemographicsPanel:
         # Cache for sparkline or historical data if needed in the future
         self.age_groups = ["Youth (0-14)", "Working (15-64)", "Elderly (65+)"]
 
-    def render(self, composer: UIComposer, state, player_tag: str):
+    def render(self, composer: UIComposer, state, player_tag: str, **kwargs):
         # Position: Left Side, offset below Politics
-        expanded, _ = composer.begin_panel("DEMOGRAPHY", 10, 350, 240, 480)
+        expanded, opened = composer.begin_panel("DEMOGRAPHICS", 10, 350, 240, 480, is_visible=True)
         
         if expanded:
             # 1. TOTAL POPULATION SUMMARY
@@ -84,3 +84,4 @@ class DemographicsPanel:
                 pass
 
         composer.end_panel()
+        return opened
