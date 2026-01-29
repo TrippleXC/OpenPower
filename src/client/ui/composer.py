@@ -121,20 +121,17 @@ class UIComposer:
         Detects a clean right-click release on the background.
         Calculates the drag delta to ensure the user wasn't panning the map.
         """
-        # Ensure we are not clicking on an ImGui window.
+        # If the user is currently interacting with an ImGui window (like a slider),
+        # don't trigger the game world context menu.
         if imgui.get_io().want_capture_mouse:
             return False
 
-        # Only trigger on release to differentiate between press-to-drag and click.
-        if imgui.is_mouse_released(imgui.MouseButton_.right):
-            # Check if the mouse moved significantly since the button was pressed.
-            # Using 5.0 as a standard pixel threshold for unintended movement.
-            drag_delta = imgui.get_mouse_drag_delta(imgui.MouseButton_.right)
-            drag_dist_sq = drag_delta.x**2 + drag_delta.y**2
-            
-            return drag_dist_sq < 25.0  # 5 pixels squared
-            
-        return False
+        # ImGui internally tracks how far the mouse has moved since the last 'down' event.
+        drag_delta = imgui.get_mouse_drag_delta(imgui.MouseButton_.right)
+        drag_dist_sq = drag_delta.x**2 + drag_delta.y**2
+        
+        # 25.0 is 5 pixels squared. If they moved less than this, it's a click.
+        return drag_dist_sq < 25.0
 
     def begin_menu(self, label: str):
         return imgui.begin_menu(label)

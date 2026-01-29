@@ -38,8 +38,6 @@ class GameLayout(BaseLayout):
         self.register_panel("MIL", MilitaryPanel(), icon="MIL", color=GAMETHEME.col_military)
         self.register_panel("ECO", EconomyPanel(), icon="ECO", color=GAMETHEME.col_economy)
         self.register_panel("DEM", DemographicsPanel(), icon="DEM", color=GAMETHEME.col_demographics)
-
-        #self.register_panel("DATA_INSPECTOR", DataInspectorPanel(), visible=False)
         
     def render(self, selected_region_id: Optional[int], hovered_region_id: Optional[int], fps: float):
         """

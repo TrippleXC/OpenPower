@@ -113,20 +113,19 @@ class GameView(BaseImGuiView):
         # 1. Delegate standard interactions (Pan, Zoom, Left-Click Select) to the Controller
         self.viewport_ctrl.on_mouse_press(x, y, button)
 
-        # 2. Handle Context Menu Trigger (Right Click)
-        # We explicitly calculate the region ID here and inject it into the Layout.
-        # This solves the coordinate drift issue caused by render loop timing mismatches.
-        if button == arcade.MOUSE_BUTTON_RIGHT:
-            
-            # Ask the controller to translate accurate screen coords -> World ID
-            target_region_id = self.viewport_ctrl.get_region_at(x, y)
-            
-            if target_region_id:
-                # Command the UI to open the menu for this specific ID
-                self.layout.show_context_menu(target_region_id)
-
     def on_game_mouse_release(self, x, y, button, modifiers):
+        # 1. End panning logic in the controller
         self.viewport_ctrl.on_mouse_release(x, y, button)
+
+        # 2. Check for Context Menu trigger (Right Click)
+        if button == arcade.MOUSE_BUTTON_RIGHT:
+            # We use the helper in UIComposer which checks if the mouse 
+            # moved more than 5 pixels during the press.
+            if self.layout.composer.is_background_clicked():
+                target_region_id = self.viewport_ctrl.get_region_at(x, y)
+                
+                if target_region_id:
+                    self.layout.show_context_menu(target_region_id)
 
     def on_game_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         self.viewport_ctrl.on_mouse_drag(x, y, dx, dy, buttons)
