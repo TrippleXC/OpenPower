@@ -1,117 +1,112 @@
 import polars as pl
 import dataclasses
 from imgui_bundle import imgui
+
+# Base Architecture
+from src.client.ui.panels.base_panel import BasePanel
 from src.client.ui.composer import UIComposer
 from src.client.ui.theme import GAMETHEME
 from src.server.state import GameState
 
-class DataInspectorPanel:
+class DataInspectorPanel(BasePanel):
     """
     A debugging tool to visualize the raw Polars DataFrames AND Python Objects/Dataclasses
     stored in GameState.
     """
     def __init__(self):
+        # Position: Centered-ish, large window
+        super().__init__("DATA INSPECTOR", x=300, y=100, w=1000, h=700)
+        
         self.selected_key = None
         self.row_limit = 50 
 
-    def render(self, composer: UIComposer, state: GameState, **kwargs):
-        # Position: Centered, occupying 80% of the screen
-        vp = imgui.get_main_viewport()
-        w, h = vp.size.x * 0.8, vp.size.y * 0.7
+    def _render_content(self, composer: UIComposer, state: GameState, **kwargs):
+        """
+        Renders the internal debug view.
+        BasePanel handles the Window Begin/End.
+        """
         
-        expanded, opened = composer.begin_panel(
-            "DATA INSPECTOR", 
-            (vp.size.x - w) / 2, 
-            (vp.size.y - h) / 2, 
-            w, h, 
-            is_visible=True
-        )
+        # --- 1. Aggregation of Inspectable Data ---
+        # We combine Tables, Globals, and specific Attributes into one list
+        inspectables = {}
+        
+        # Add Attributes (like Time)
+        if hasattr(state, "time"):
+            inspectables["[Obj] Time"] = state.time
 
-        if expanded:
-            # --- 1. Aggregation of Inspectable Data ---
-            # We combine Tables, Globals, and specific Attributes into one list
-            inspectables = {}
+        # Add DataFrames
+        if hasattr(state, "tables"):
+            for name, df in state.tables.items():
+                inspectables[f"[Table] {name}"] = df
+        
+        # Add Globals
+        if hasattr(state, "globals") and isinstance(state.globals, dict):
+            for k, v in state.globals.items():
+                inspectables[f"[Global] {k}"] = v
+
+        item_keys = sorted(list(inspectables.keys()))
+
+        # --- 2. Control Header ---
+        if not item_keys:
+            imgui.text_disabled("GameState is empty.")
+        else:
+            # Default selection
+            if self.selected_key not in inspectables:
+                self.selected_key = item_keys[0]
+
+            # Selector
+            imgui.align_text_to_frame_padding()
+            imgui.text("Target:")
+            imgui.same_line()
+            imgui.set_next_item_width(250)
             
-            # Add Attributes (like Time)
-            if hasattr(state, "time"):
-                inspectables["[Obj] Time"] = state.time
-
-            # Add DataFrames
-            if hasattr(state, "tables"):
-                for name, df in state.tables.items():
-                    inspectables[f"[Table] {name}"] = df
+            # Ensure we pass a string, even if selected_key is None
+            preview_val = self.selected_key if self.selected_key else ""
             
-            # Add Globals
-            if hasattr(state, "globals") and isinstance(state.globals, dict):
-                for k, v in state.globals.items():
-                    inspectables[f"[Global] {k}"] = v
+            if imgui.begin_combo("##InspectorSel", preview_val):
+                for key in item_keys:
+                    is_selected = (key == self.selected_key)
+                    if imgui.selectable(key, is_selected)[0]:
+                        self.selected_key = key
+                    if is_selected:
+                        imgui.set_item_default_focus()
+                imgui.end_combo()
 
-            item_keys = sorted(list(inspectables.keys()))
+            # Get selected object
+            data = inspectables.get(self.selected_key)
 
-            # --- 2. Control Header ---
-            if not item_keys:
-                imgui.text_disabled("GameState is empty.")
-            else:
-                # Default selection
-                if self.selected_key not in inspectables:
-                    self.selected_key = item_keys[0]
-
-                # Selector
-                imgui.align_text_to_frame_padding()
-                imgui.text("Target:")
+            # Show specific controls based on type
+            if isinstance(data, pl.DataFrame):
                 imgui.same_line()
-                imgui.set_next_item_width(250)
-                
-                # FIX: Ensure we pass a string, even if selected_key is None
-                preview_val = self.selected_key if self.selected_key else ""
-                
-                if imgui.begin_combo("##InspectorSel", preview_val):
-                    for key in item_keys:
-                        is_selected = (key == self.selected_key)
-                        if imgui.selectable(key, is_selected)[0]:
-                            self.selected_key = key
-                        if is_selected:
-                            imgui.set_item_default_focus()
-                    imgui.end_combo()
+                imgui.text_disabled("|")
+                imgui.same_line()
+                imgui.set_next_item_width(150)
+                _, self.row_limit = imgui.slider_int("Row Limit", self.row_limit, 10, 1000)
+                imgui.same_line()
+                imgui.text_colored(GAMETHEME.col_info, f"Shape: {data.shape}")
+            
+            elif dataclasses.is_dataclass(data):
+                imgui.same_line()
+                imgui.text_colored(GAMETHEME.col_politics, "Type: Dataclass")
 
-                # Get selected object
-                data = inspectables.get(self.selected_key)
+            elif isinstance(data, dict):
+                imgui.same_line()
+                imgui.text_colored(GAMETHEME.col_politics, f"Type: Dict ({len(data)} keys)")
 
-                # Show specific controls based on type
-                if isinstance(data, pl.DataFrame):
-                    imgui.same_line()
-                    imgui.text_disabled("|")
-                    imgui.same_line()
-                    imgui.set_next_item_width(150)
-                    _, self.row_limit = imgui.slider_int("Row Limit", self.row_limit, 10, 1000)
-                    imgui.same_line()
-                    imgui.text_colored(GAMETHEME.col_info, f"Shape: {data.shape}")
-                
-                elif dataclasses.is_dataclass(data):
-                    imgui.same_line()
-                    imgui.text_colored(GAMETHEME.col_politics, "Type: Dataclass")
+        imgui.separator()
 
-                elif isinstance(data, dict):
-                    imgui.same_line()
-                    imgui.text_colored(GAMETHEME.col_politics, f"Type: Dict ({len(data)} keys)")
-
-            imgui.separator()
-
-            # --- 3. Render Content ---
-            if self.selected_key and self.selected_key in inspectables:
-                target_data = inspectables[self.selected_key]
-                
-                if isinstance(target_data, pl.DataFrame):
-                    self._render_dataframe(target_data)
-                elif dataclasses.is_dataclass(target_data):
-                    self._render_dataclass(target_data)
-                elif isinstance(target_data, dict):
-                    self._render_dict(target_data)
-                else:
-                    self._render_generic_object(target_data)
-
-        composer.end_panel()
-        return opened
+        # --- 3. Render Content ---
+        if self.selected_key and self.selected_key in inspectables:
+            target_data = inspectables[self.selected_key]
+            
+            if isinstance(target_data, pl.DataFrame):
+                self._render_dataframe(target_data)
+            elif dataclasses.is_dataclass(target_data):
+                self._render_dataclass(target_data)
+            elif isinstance(target_data, dict):
+                self._render_dict(target_data)
+            else:
+                self._render_generic_object(target_data)
 
     def _render_dataframe(self, df: pl.DataFrame):
         """Renders Polars DataFrame."""

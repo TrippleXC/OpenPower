@@ -1,40 +1,28 @@
-from imgui_bundle import imgui
 import polars as pl
-from typing import Optional, Callable
-from src.server.state import GameState
+from imgui_bundle import imgui
+from src.client.ui.panels.base_panel import BasePanel
+from src.client.ui.composer import UIComposer
 from src.client.ui.theme import GAMETHEME
 
-class RegionInspectorPanel:
+class RegionInspectorPanel(BasePanel):
     def __init__(self):
+        super().__init__("Region Inspector", x=400, y=200, w=300, h=480)
         self.filter_text: str = ""
         self._cached_list: list = []
         self._cache_dirty = True
 
-    def render(self, composer, state: GameState, **kwargs) -> bool:
-        """
-        Renders the detailed view of a selected region.
-        The selected_region_id and callback are pulled from kwargs to maintain
-        a flexible, modular interface.
-        """
-        # Data extraction from shared context
+    def _render_content(self, composer: UIComposer, state, **kwargs):
+        # Extract data passed from GameLayout
         region_id = kwargs.get("selected_region_id")
         on_focus_request = kwargs.get("on_focus_request")
 
-        # Position is handled by ImGui Cond_.first_use_ever in composer
-        expanded, opened = composer.begin_panel("Region Inspector", 400, 200, 300, 480, is_visible=True)
-
-        if expanded:
-            if region_id is None:
-                imgui.text_disabled("Select a region on the map\nto view its statistics.")
-            else:
-                self._render_details(region_id, state, on_focus_request)
-
-        composer.end_panel()
-        # Return False if 'X' was clicked to let the Layout hide this panel
-        return opened
+        if region_id is None:
+            imgui.text_disabled("Select a region on the map\nto view its statistics.")
+        else:
+            self._render_details(region_id, state, on_focus_request)
 
     def _render_details(self, region_id, state, on_focus_request):
-        """Internal helper to keep the render flow clean."""
+        """Internal helper to render specific region stats."""
         try:
             regions = state.get_table("regions")
             row_df = regions.filter(pl.col("id") == region_id)
@@ -47,9 +35,10 @@ class RegionInspectorPanel:
             imgui.text_colored(GAMETHEME.col_active_accent, f"NAME: {row.get('name', '???')}")
             
             if on_focus_request and imgui.button("CENTER CAMERA"):
-                on_focus_request(region_id, float(row.get('center_x', 0)), float(row.get('center_y', 0)))
+                on_focus_request(region_id) # The ViewportController handles the logic
 
             imgui.separator()
+            imgui.text(f"ID: {region_id}")
             imgui.text(f"Owner: {row.get('owner', 'Neutral')}")
             imgui.text(f"Biome: {row.get('biome', 'N/A')}")
             
@@ -59,8 +48,11 @@ class RegionInspectorPanel:
         except Exception as e:
             imgui.text_disabled(f"Error loading data: {e}")
 
-    def _update_filter_cache(self, state: GameState, filter_text: str):
-        """Rebuilds the UI list from the dataframe."""
+    def _update_filter_cache(self, state, filter_text: str):
+        """
+        Rebuilds the UI list from the dataframe.
+        (Kept for future features, though not actively used in the current compact inspector)
+        """
         try:
             if "regions" not in state.tables: return
 
