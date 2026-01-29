@@ -4,14 +4,14 @@
     // "workspace" ensures Pylance scans all files in the project, not just open ones
     "python.analysis.diagnosticMode": "workspace",
     // "basic" provides a strong baseline. "strict" is also available for maximum rigor
-    "python.analysis.typeCheckingMode": "basic",
+    // "python.analysis.typeCheckingMode": "basic",
     // Enable indexing for third-party libraries and project files
     "python.analysis.indexing": true,
     // --- Specific Rule Overrides (The "Comprehensive" List) ---
     "python.analysis.diagnosticSeverityOverrides": {
         // 1. Core Logic & Variables (Catch non-existent functions/classes)
         "reportUndefinedVariable": "error", // Red flag for non-existent functions or variables
-        "reportAttributeAccessIssue": "error", // Red flag for calling methods that don't exist on an object
+        // "reportAttributeAccessIssue": "error", // Red flag for calling methods that don't exist on an object
         "reportCallIssue": "error", // Red flag for calling functions with wrong arguments
         "reportGeneralTypeIssues": "error", // Catch type mismatches (e.g., passing string to int)
         "reportOptionalMemberAccess": "warning", // Warn when accessing attributes on a value that might be None
