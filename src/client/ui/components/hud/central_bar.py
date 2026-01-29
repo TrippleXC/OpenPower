@@ -2,7 +2,7 @@ import arcade
 import polars as pl
 from pathlib import Path
 from typing import Dict, Optional
-from imgui_bundle import imgui
+from imgui_bundle import imgui, icons_fontawesome_6
 
 from src.client.ui.composer import UIComposer
 from src.client.ui.theme import GAMETHEME
@@ -81,11 +81,11 @@ class CentralBar:
                 imgui.same_line()
                 
                 btn_sz = (40, 40)
-                if imgui.button("AI", btn_sz): pass
+                if imgui.button(f"{icons_fontawesome_6.ICON_FA_DESKTOP}", btn_sz): pass
                 imgui.same_line()
-                if imgui.button("STAT", btn_sz): pass
+                if imgui.button(f"{icons_fontawesome_6.ICON_FA_CHART_LINE}", btn_sz): pass
                 imgui.same_line()
-                if imgui.button("MSG", btn_sz): pass
+                if imgui.button(f"{icons_fontawesome_6.ICON_FA_COMMENTS}", btn_sz): pass
 
                 # --- Section 3: Time Control ---
                 imgui.same_line()

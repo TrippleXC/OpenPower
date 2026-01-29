@@ -129,7 +129,7 @@ class FontLoader:
 
             # 3. Locate FontAwesome .ttf
             assets_path = FontLoader.get_imgui_bundle_assets_path()
-            icon_font_path = os.path.join(assets_path, "fonts", "fontawesome-webfont.ttf")
+            icon_font_path = os.path.join(assets_path, "fonts", "Font_Awesome_6_Free-Solid-900.otf")
             
             if os.path.exists(icon_font_path):
                 icon_size = size_pixels * 0.9 
