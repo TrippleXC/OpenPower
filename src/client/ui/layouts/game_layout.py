@@ -109,7 +109,7 @@ class GameLayout(BaseLayout):
         imgui.pop_style_color(2)
 
     def _render_system_bar(self, nav):
-        """Top-Right corner buttons."""
+        """Top-Right corner buttons with Crash Protection."""
         vp_w = imgui.get_main_viewport().size.x
         imgui.set_next_window_pos((vp_w - 260, 10))
         flags = (imgui.WindowFlags_.no_decoration | 
@@ -117,18 +117,43 @@ class GameLayout(BaseLayout):
                  imgui.WindowFlags_.always_auto_resize |
                  imgui.WindowFlags_.no_background)
 
+        # 1. Begin the window
+        # We assume it always returns true for a simple NoDecoration window,
+        # but standard practice is to handle the return value.
         if imgui.begin("##System_Bar", True, flags):
-            # Using theme buttons
-            btn_size = (70, 25)
-            if imgui.button("SAVE", btn_size):
-                self.net.request_save()
-            imgui.same_line()
-            if imgui.button("LOAD", btn_size):
-                nav.show_load_game_screen(self.net.session.config)
-            imgui.same_line()
-            if imgui.button("MENU", btn_size):
-                nav.show_main_menu(self.net.session, self.net.session.config)
-        imgui.end()
+            try:
+                # 2. Render Buttons
+                btn_size = (70, 25)
+                
+                if imgui.button("SAVE", btn_size):
+                    self.net.request_save()
+                
+                imgui.same_line()
+                if imgui.button("LOAD", btn_size):
+                    # Check if self.net.session exists! 
+                    # If NetworkClient doesn't expose .session, this lines crashes.
+                    if hasattr(self.net, 'session'):
+                        nav.show_load_game_screen(self.net.session.config)
+                    else:
+                        print("Error: self.net.session is missing!")
+
+                imgui.same_line()
+                if imgui.button("MENU", btn_size):
+                    if hasattr(self.net, 'session'):
+                        nav.show_main_menu(self.net.session, self.net.session.config)
+                    else:
+                        print("Error: self.net.session is missing!")
+
+            except Exception as e:
+                # This catches the click logic error so the UI doesn't explode
+                print(f"System Bar Action Error: {e}")
+            
+            finally:
+                # 3. ALWAYS End the window, no matter what happened above
+                imgui.end()
+        else:
+            # If Begin returned False (collapsed), we still must End it.
+            imgui.end()
 
     def _render_time_controls(self, state):
         """Renders the Play/Pause and Speed controls at the bottom center."""
