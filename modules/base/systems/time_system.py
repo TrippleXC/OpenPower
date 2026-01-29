@@ -55,6 +55,7 @@ class TimeSystem(ISystem):
             if isinstance(action, ActionSetGameSpeed):
                 # Clamp speed between 1 and 5
                 t.speed_level = max(1, min(5, action.speed_level))
+                state.globals["game_speed"] = t.speed_level
             
             elif isinstance(action, ActionSetPaused):
                 t.is_paused = action.is_paused
