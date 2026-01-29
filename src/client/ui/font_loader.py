@@ -132,7 +132,7 @@ class FontLoader:
             icon_font_path = os.path.join(assets_path, "fonts", "Font_Awesome_6_Free-Solid-900.otf")
             
             if os.path.exists(icon_font_path):
-                icon_size = size_pixels * 0.9 
+                icon_size = size_pixels * 1.5
                 
                 try:
                     io.fonts.add_font_from_file_ttf(icon_font_path, icon_size, icon_cfg, icon_ranges_ptr)

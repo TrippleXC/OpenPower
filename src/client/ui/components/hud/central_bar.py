@@ -130,7 +130,7 @@ class CentralBar:
             imgui.push_style_color(imgui.Col_.button, GAMETHEME.col_warning)
             imgui.push_style_color(imgui.Col_.text, GAMETHEME.col_black)
         
-        if imgui.button(icons_fontawesome_6.ICON_FA_PAUSE, btn_s):
+        if imgui.button("||", btn_s):
             net.send_action(ActionSetPaused("local", not is_paused))
         
         if is_paused: imgui.pop_style_color(2)

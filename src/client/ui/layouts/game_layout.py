@@ -5,6 +5,8 @@ from typing import Optional
 # (Standard imports required for type hinting and UI logic)
 import arcade 
 
+from imgui_bundle import imgui, icons_fontawesome_6
+
 # Internal - UI & Theme
 from src.client.ui.composer import UIComposer
 from src.client.ui.theme import GAMETHEME
@@ -55,10 +57,10 @@ class GameLayout(BaseLayout):
         # --- Panel Registry ---
         # Panels are registered with an ID, instance, and optional metadata (icon/color).
         # This metadata is used by the ToggleBar to generate buttons dynamically.
-        self.register_panel("POL", PoliticsPanel(), icon="POL", color=GAMETHEME.col_politics, visible=False)
-        self.register_panel("MIL", MilitaryPanel(), icon="MIL", color=GAMETHEME.col_military, visible=False)
-        self.register_panel("ECO", EconomyPanel(), icon="ECO", color=GAMETHEME.col_economy, visible=False)
-        self.register_panel("DEM", DemographicsPanel(), icon="DEM", color=GAMETHEME.col_demographics, visible=False)
+        self.register_panel("POL", PoliticsPanel(), icon=f"{icons_fontawesome_6.ICON_FA_BUILDING_COLUMNS}", color=GAMETHEME.col_politics, visible=False)
+        self.register_panel("MIL", MilitaryPanel(), icon=f"{icons_fontawesome_6.ICON_FA_PERSON_MILITARY_RIFLE}", color=GAMETHEME.col_military, visible=False)
+        self.register_panel("ECO", EconomyPanel(), icon=f"{icons_fontawesome_6.ICON_FA_SACK_DOLLAR}", color=GAMETHEME.col_economy, visible=False)
+        self.register_panel("DEM", DemographicsPanel(), icon=f"{icons_fontawesome_6.ICON_FA_PEOPLE_GROUP}", color=GAMETHEME.col_demographics, visible=False)
         
         # Debug/Inspector tools (No icon, accessed via context menu)
         self.register_panel("DATA_INSPECTOR", DataInspectorPanel(), visible=False)
