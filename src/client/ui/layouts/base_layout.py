@@ -100,10 +100,24 @@ class BaseLayout:
                 imgui.separator()
 
             if self.composer.begin_menu("Map Mode"):
-                if self.composer.draw_menu_item("Political"):
-                    if hasattr(self, 'map_mode'): setattr(self, 'map_mode', "political")
-                if self.composer.draw_menu_item("Terrain"):
+                # Terrain Toggle (Overlay Mode)
+                if self.composer.draw_menu_item("Physical (Terrain)"):
+                    # This is handled by renderer.draw(mode=...) logic in GameView
+                    # You might need to expose a callback or state variable here.
                     if hasattr(self, 'map_mode'): setattr(self, 'map_mode', "terrain")
+
+                imgui.separator()
+                
+                # Dynamic Map Modes (Visual Overlay)
+                # We assume viewport_ctrl exposes available modes
+                if hasattr(self.viewport_ctrl, "map_modes"):
+                    for key, mode_obj in self.viewport_ctrl.map_modes.items():
+                        is_active = (self.viewport_ctrl.current_mode_key == key)
+                        if imgui.menu_item(mode_obj.name, "", is_active)[0]:
+                            self.viewport_ctrl.set_map_mode(key)
+                            # Ensure we are in political/overlay mode, not pure terrain
+                            if hasattr(self, 'map_mode'): setattr(self, 'map_mode', "political")
+                
                 self.composer.end_menu()
 
             if "DATA_INSPECTOR" in self.panels:

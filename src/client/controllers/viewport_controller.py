@@ -1,13 +1,17 @@
 import arcade
 import polars as pl
-from typing import Optional, Callable
+from typing import Optional, Callable, Dict
 from enum import Enum, auto
 
 from src.client.controllers.camera_controller import CameraController
 from src.client.renderers.map_renderer import MapRenderer
 from src.client.services.network_client_service import NetworkClient
-from src.client.utils.color_generator import generate_political_colors
 from src.client.utils.coords_util import image_to_world
+
+# Strategy Imports
+from src.client.map_modes.base_map_mode import BaseMapMode
+from src.client.map_modes.political_mode import PoliticalMapMode
+from src.client.map_modes.gradient_mode import GradientMapMode
 
 class SelectionMode(Enum):
     REGION = auto()
@@ -16,7 +20,7 @@ class SelectionMode(Enum):
 class ViewportController:
     """
     The Brains of the Map.
-    Handles Input -> Camera, Input -> Selection, and State -> Visual Layers.
+    Handles Input -> Camera, Input -> Selection, and State -> Map Modes.
     """
     def __init__(self, 
                  cam_ctrl: CameraController, 
@@ -34,42 +38,59 @@ class ViewportController:
         self._is_panning = False
         self.selection_mode = SelectionMode.COUNTRY
 
+        # --- MAP MODES (Composition) ---
+        # We instantiate strategies here. The 'political' mode is default.
+        self.map_modes: Dict[str, BaseMapMode] = {
+            "political": PoliticalMapMode(),
+            
+            # GDP Per Capita Strategy:
+            # - Targets "gdp_per_capita" column
+            # - fallback_to_country=True ensures regions inherit their owner's GDP
+            "gdp_per_capita": GradientMapMode(
+                mode_name="GDP (Per Capita)", 
+                column_name="gdp_per_capita", 
+                fallback_to_country=True
+            ),
+            
+            # Additional generic modes can be added easily here
+            # "population": GradientMapMode("Population", "pop_total", fallback_to_country=False)
+        }
+        self.current_mode_key = "political"
+
     def set_selection_mode(self, mode: SelectionMode):
-        """
-        Switches between Region and Country selection modes.
-        Clears current selection to prevent visual confusion.
-        """
         self.selection_mode = mode
-        # Clear visual highlight on map
         self.renderer.clear_highlight()
-        # Notify UI to clear inspector panel
         self.on_selection_change(None)
 
-    # --- VISUALIZATION HELPERS ---
-    def refresh_political_layer(self):
+    def set_map_mode(self, mode_key: str):
         """
-        Fetches state, generates colors, and updates the GPU texture.
+        Public API to switch the active visualization strategy.
+        """
+        if mode_key in self.map_modes:
+            self.current_mode_key = mode_key
+            self.refresh_map_layer()
+
+    # --- VISUALIZATION HELPERS ---
+    
+    def refresh_map_layer(self):
+        """
+        Fetches state, asks the active MapMode Strategy to calculate colors,
+        and pushes the result to the generic GPU renderer.
         """
         state = self.net.get_state()
-        if "regions" not in state.tables: return
-
-        df = state.get_table("regions")
-        if "owner" not in df.columns: return
-
-        # 1. Generate Mapping
-        region_map = dict(zip(df["id"], df["owner"]))
-        unique_owners = df["owner"].unique().to_list()
+        active_mode = self.map_modes[self.current_mode_key]
         
-        # 2. Generate Deterministic Colors
-        color_map = generate_political_colors(unique_owners)
+        # 1. Execute Strategy (Pure Data Transformation)
+        color_map = active_mode.calculate_colors(state)
         
-        # 3. Push to GPU
-        self.renderer.update_political_layer(region_map, color_map)
+        # 2. Update Renderer (Pure Visualization)
+        self.renderer.update_overlay(color_map)
+
+    # Legacy alias for compatibility with older Views, routed to new logic
+    def refresh_political_layer(self):
+        self.set_map_mode("political")
 
     def focus_on_region(self, region_id: int):
-        """
-        Calculates region center and jumps camera.
-        """
         state = self.net.get_state()
         if "regions" not in state.tables: return
 
@@ -102,7 +123,6 @@ class ViewportController:
             self._is_panning = False
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float, buttons: int):
-        # Bitwise check for Arcade 3.0
         is_panning_btn = (buttons & arcade.MOUSE_BUTTON_RIGHT) or (buttons & arcade.MOUSE_BUTTON_MIDDLE)
         
         if self._is_panning or is_panning_btn:
@@ -116,7 +136,6 @@ class ViewportController:
 
     # --- SELECTION LOGIC ---
     def select_region_by_id(self, region_id: int):
-        """Public API for UI to force selection."""
         if region_id is None or region_id <= 0:
             self.renderer.clear_highlight()
             self.on_selection_change(None)
@@ -131,7 +150,6 @@ class ViewportController:
     def _apply_selection_logic(self, region_id: int):
         highlight_ids = [region_id]
 
-        # Handle "Select Country" mode logic
         if self.selection_mode == SelectionMode.COUNTRY:
             state = self.net.get_state()
             if "regions" in state.tables:
@@ -141,24 +159,16 @@ class ViewportController:
                 if not owner_rows.is_empty():
                     owner = owner_rows["owner"][0]
                     if owner and owner != "None":
-                        # Get ALL regions by this owner
+                        # Get ALL regions by this owner for multi-select
                         highlight_ids = df.filter(pl.col("owner") == owner)["id"].to_list()
 
         self.renderer.set_highlight(highlight_ids)
         self.on_selection_change(region_id)
 
     def get_region_at(self, screen_x: float, screen_y: float) -> Optional[int]:
-        """
-        Public API for UI.
-        Converts screen coords -> world coords and asks the Renderer.
-        """
         try:
-            # 1. Переводимо екранні координати у світові (враховуючи зум і камеру)
             world_pos = self.world_cam.unproject((screen_x, screen_y))
-            
-            # 2. Викликаємо ту саму функцію MapRenderer, яку ти мені показав
             region_id = self.renderer.get_region_id_at_world_pos(world_pos.x, world_pos.y)
-            
             return region_id if region_id > 0 else None
         except Exception:
             return None

@@ -54,9 +54,10 @@ class GameView(BaseImGuiView):
 
     def on_show_view(self):
         self.window.background_color = GAMETHEME.col_black
-        # Sync camera state immediately to prevent visual jumps on load
         self.cam_ctrl.sync_with_arcade(self.world_cam)
-        self._refresh_political_map()
+        
+        # Update: Use the generic refresh
+        self.viewport_ctrl.refresh_map_layer() 
 
     def _refresh_political_map(self):
         """Fetches latest state and updates the GPU texture for the political layer."""

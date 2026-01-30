@@ -293,20 +293,21 @@ class CentralBar:
                 except: pass
                 
                 # Use a child window to make it scrollable
-                if imgui.begin_child("CountryList", (250, 300), True):
-                    for row in df.iter_rows(named=True):
-                        tag = row['id']
-                        name = row.get('name', tag)
-                        label = f"{tag} - {name}"
+                imgui.begin_child("CountryList", (250, 300), True)
+                
+                for row in df.iter_rows(named=True):
+                    tag = row['id']
+                    name = row.get('name', tag)
+                    label = f"{tag} - {name}"
+                    
+                    # Highlight current tag
+                    is_selected = (tag == self.active_tag)
+                    
+                    if imgui.selectable(label, is_selected)[0]:
+                        self._switch_request = tag
+                        imgui.close_current_popup()
                         
-                        # Highlight current tag
-                        is_selected = (tag == self.active_tag)
-                        
-                        if imgui.selectable(label, is_selected)[0]:
-                            self._switch_request = tag
-                            imgui.close_current_popup()
-                            
-                    imgui.end_child()
+                imgui.end_child()
             else:
                 imgui.text_colored(GAMETHEME.col_error, "No country data loaded.")
                 
