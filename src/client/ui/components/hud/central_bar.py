@@ -96,10 +96,9 @@ class CentralBar:
                 self._render_quick_actions(inner_item_h, btn_spacing)
 
                 # 4. Bottom Section: News Ticker
-                text_height = imgui.get_text_line_height()
-                ticker_text_y = top_h + (ticker_h - text_height) / 2
-                imgui.set_cursor_pos((padding_x, ticker_text_y))
-                self._render_ticker()
+                # Set cursor to start of bottom section
+                imgui.set_cursor_pos((0, top_h))
+                self._render_ticker(w, ticker_h)
 
                 # 5. Popups
                 self._render_country_selector_popup(state)
@@ -128,11 +127,14 @@ class CentralBar:
             draw_list.add_rect(p, (p.x + screen_w, p.y + height), imgui.get_color_u32(GAMETHEME.border))
             
             imgui.begin_child("TimeScreen", (screen_w, height), False, imgui.WindowFlags_.no_background)
-            imgui.set_cursor_pos((10, (height - 26) / 2))
+            
             if self.show_speed_controls:
+                # Center the buttons vertically within the child
+                btn_h = 26
+                imgui.set_cursor_pos((10, (height - btn_h) / 2))
                 self._draw_speed_buttons(state, net)
             else:
-                self._draw_date_display(state)
+                self._draw_date_display(state, screen_w, height)
             imgui.end_child()
         finally:
             imgui.end_group()
@@ -166,11 +168,25 @@ class CentralBar:
             if i < 5: imgui.same_line()
         imgui.pop_style_var(2)
 
-    def _draw_date_display(self, state):
+    def _draw_date_display(self, state, avail_w, avail_h):
         t = state.time
         parts = t.date_str.split(" ")
         date_part = parts[0] if len(parts) > 0 else "N/A"
         time_part = parts[1] if len(parts) > 1 else ""
+        
+        full_text = f"{date_part}   {time_part}"
+        
+        # Calculate size to center perfectly
+        text_size = imgui.calc_text_size(full_text)
+        text_w = text_size.x
+        text_h = text_size.y
+        
+        pos_x = (avail_w - text_w) / 2
+        pos_y = (avail_h - text_h) / 2
+        
+        imgui.set_cursor_pos((pos_x, pos_y))
+        
+        # Draw with color logic
         imgui.text_colored(GAMETHEME.col_positive, date_part)
         imgui.same_line()
         imgui.text_colored(GAMETHEME.col_text_bright, time_part)
@@ -230,11 +246,38 @@ class CentralBar:
         if not self.is_own:
             imgui.end_disabled()
 
-    def _render_ticker(self):
-        imgui.align_text_to_frame_padding()
-        imgui.text_colored(GAMETHEME.col_text_disabled, icons_fontawesome_6.ICON_FA_NEWSPAPER)
-        imgui.same_line()
+    def _render_ticker(self, section_w, section_h):
+        """
+        Renders the news ticker text centered vertically and adds a news history button on the right.
+        """
+        padding_x = 12.0
+        
+        # 1. Calculate Vertical Center for Text
+        text_line_h = imgui.get_text_line_height()
+        text_y = (section_h - text_line_h) / 2
+        
+        # We need to offset from the current cursor position (which is at the top of the section)
+        current_y = imgui.get_cursor_pos_y()
+        
+        # Draw Text
+        imgui.set_cursor_pos((padding_x, current_y + text_y))
         imgui.text_colored(GAMETHEME.col_text_bright, self.news_ticker_text)
+        
+        # 2. Draw "News Button" on the far right
+        btn_h = section_h - 6.0 # Small padding top/bottom
+        btn_w = btn_h
+        
+        btn_x = section_w - btn_w - 6.0 # 6px padding from right edge
+        btn_y = current_y + (section_h - btn_h) / 2
+        
+        imgui.set_cursor_pos((btn_x, btn_y))
+        
+        # Use transparent background for a cleaner look, or standard button
+        if imgui.button(icons_fontawesome_6.ICON_FA_NEWSPAPER, (btn_w, btn_h)):
+            # Placeholder for opening news history panel
+            pass
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("News History")
 
     def _render_country_selector_popup(self, state):
         """Restored Popup: Lists all countries in the game state."""
