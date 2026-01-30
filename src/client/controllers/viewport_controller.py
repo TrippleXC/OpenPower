@@ -32,7 +32,7 @@ class ViewportController:
         self.on_selection_change = on_selection_change
         
         self._is_panning = False
-        self.selection_mode = SelectionMode.REGION
+        self.selection_mode = SelectionMode.COUNTRY
 
     def set_selection_mode(self, mode: SelectionMode):
         """
