@@ -1,80 +1,108 @@
 import polars as pl
+import math
 from typing import Dict, Tuple
 from src.server.state import GameState
 from src.client.map_modes.base_map_mode import BaseMapMode
-from src.client.utils.gradient import lerp_color
+from src.client.utils.gradient import get_heatmap_color, lerp_color
 
 class GradientMapMode(BaseMapMode):
-    """
-    Generic mode for visualizing numeric data on a gradient (Blue -> Red).
-    Can target columns in 'regions' table OR 'countries' table.
-    """
-    def __init__(self, mode_name: str, column_name: str, fallback_to_country: bool = True):
+    def __init__(self, 
+                 mode_name: str, 
+                 column_name: str, 
+                 fallback_to_country: bool = True, 
+                 use_percentile: bool = False,   # <--- Fixes "All Blue"
+                 steps: int = 0):                # <--- Creates "Groups"
+        
         self._name = mode_name
         self.column_name = column_name
         self.fallback_to_country = fallback_to_country
-        
-        self.col_min = (0, 0, 255) # Blue (Low)
-        self.col_max = (255, 0, 0) # Red (High)
-        self.col_none = (40, 40, 40) # Grey (No Data)
+        self.use_percentile = use_percentile
+        self.steps = steps
 
     @property
     def name(self) -> str:
         return self._name
+    
+    @property
+    def merge_borders(self) -> bool:
+        return self.fallback_to_country
 
     def calculate_colors(self, state: GameState) -> Dict[int, Tuple[int, int, int]]:
         if "regions" not in state.tables: return {}
         
         regions_df = state.get_table("regions")
-        target_df = regions_df
         target_col = self.column_name
         
-        # 1. Data Resolution Strategy
-        # Check if the column is directly on the region (e.g., local population)
+        # 1. Prepare Data Join (Same as before)
+        work_df = None
         if target_col in regions_df.columns:
             work_df = regions_df.select(["id", target_col])
-        
-        # If not, and fallback enabled, try to join with countries (e.g., GDP per capita)
         elif self.fallback_to_country and "countries" in state.tables:
             countries_df = state.get_table("countries")
-            
             if target_col in countries_df.columns:
-                # Join Regions with Countries on 'owner'
-                # We perform a left join to keep all regions even if owner is missing
+                # We join to get the value, but we keep the Region ID
                 work_df = regions_df.join(
                     countries_df, 
                     left_on="owner", 
                     right_on="id", 
                     how="left"
                 ).select(["id", target_col])
+        
+        if work_df is None: return {}
+
+        # 2. Filter valid data
+        # We need to compute ranks on the *unique values* first to handle ties correctly?
+        # Actually, Polars rank() works on the whole series.
+        
+        # Drop nulls for calculation safety
+        valid_df = work_df.drop_nulls(subset=[target_col])
+        if valid_df.is_empty(): return {}
+
+        # --- KEY FIX: PERCENTILE CALCULATION ---
+        if self.use_percentile:
+            # Calculate rank (0.0 to 1.0) for every row
+            # "dense" ranking ensures groups are evenly filled
+            work_df = work_df.with_columns(
+                pl.col(target_col).rank("dense").alias("rank")
+            )
+            
+            # Normalize rank to 0..1
+            max_rank = work_df.select(pl.col("rank").max()).item()
+            if max_rank > 1:
+                work_df = work_df.with_columns(
+                    (pl.col("rank") - 1) / (max_rank - 1)
+                )
             else:
-                return {} # Column not found anywhere
+                work_df = work_df.with_columns(pl.lit(0.5).alias("rank"))
+                
+            # Use the rank column for coloring
+            value_col = "rank"
+            min_val, max_val = 0.0, 1.0
+            
         else:
-            return {}
-
-        # 2. Statistics for Gradient
-        # Filter nulls to find min/max
-        valid_data = work_df.select(pl.col(target_col)).drop_nulls()
-        if valid_data.is_empty():
-            return {}
-
-        min_val = valid_data.min().item()
-        max_val = valid_data.max().item()
-
-        # Avoid division by zero
-        if max_val == min_val:
-            max_val = min_val + 1.0
+            # Standard Linear Logic
+            value_col = target_col
+            min_val = valid_df.select(pl.col(target_col).min()).item()
+            max_val = valid_df.select(pl.col(target_col).max()).item()
+            if max_val == min_val: max_val = min_val + 1.0
 
         # 3. Generate Colors
-        # Iterate and build dict (Optimization: This loop is O(N_Regions), reasonably fast for <50k)
         result = {}
         for row in work_df.iter_rows(named=True):
             rid = row["id"]
-            val = row[target_col]
+            val = row[value_col]
             
             if val is None:
-                result[rid] = self.col_none
-            else:
-                result[rid] = lerp_color(float(val), float(min_val), float(max_val), self.col_min, self.col_max)
+                result[rid] = (40, 40, 40) # Grey
+                continue
+
+            t = (float(val) - min_val) / (max_val - min_val)
+            
+            # --- OPTIONAL: QUANTIZE INTO GROUPS ---
+            # If steps=5, t becomes 0.0, 0.2, 0.4, 0.6, 0.8, 1.0
+            if self.steps > 1:
+                t = math.floor(t * self.steps) / self.steps
+
+            result[rid] = get_heatmap_color(t)
                 
         return result

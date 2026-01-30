@@ -43,17 +43,14 @@ class ViewportController:
         self.map_modes: Dict[str, BaseMapMode] = {
             "political": PoliticalMapMode(),
             
-            # GDP Per Capita Strategy:
-            # - Targets "gdp_per_capita" column
-            # - fallback_to_country=True ensures regions inherit their owner's GDP
+            # FIXED CONFIGURATION
             "gdp_per_capita": GradientMapMode(
                 mode_name="GDP (Per Capita)", 
                 column_name="gdp_per_capita", 
-                fallback_to_country=True
+                fallback_to_country=True,
+                use_percentile=True,  # <--- Fixes the "All Blue" contrast issue
+                steps=10              # <--- Divides into 10 distinct color groups
             ),
-            
-            # Additional generic modes can be added easily here
-            # "population": GradientMapMode("Population", "pop_total", fallback_to_country=False)
         }
         self.current_mode_key = "political"
 
