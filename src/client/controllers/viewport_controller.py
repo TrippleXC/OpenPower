@@ -48,8 +48,22 @@ class ViewportController:
                 mode_name="GDP (Per Capita)", 
                 column_name="gdp_per_capita", 
                 fallback_to_country=True,
-                use_percentile=True,  # <--- Fixes the "All Blue" contrast issue
-                steps=10              # <--- Divides into 10 distinct color groups
+                use_percentile=True, 
+                steps=10 
+            ),
+            "gvt_stability": GradientMapMode(
+                mode_name="Government Stability", 
+                column_name="gvt_stability", 
+                fallback_to_country=True,
+                use_percentile=True, 
+                steps=10           
+            ),
+            "money_reserves": GradientMapMode(
+                mode_name="Money Reserves", 
+                column_name="money_reserves", 
+                fallback_to_country=True,
+                use_percentile=True,
+                steps=10             
             ),
         }
         self.current_mode_key = "political"
