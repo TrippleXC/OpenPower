@@ -25,4 +25,4 @@ The Client is a **passive observer**. It must never modify the `GameState` direc
 * **Used by:** The entry point (`main.py`).
 * **NEVER imports:**
     * `src/engine`: The Client should not know how the simulation loop works.
-    * `modules`: The Client should not depend on specific game content code.
+    * `modules`: The Client should not depend on specific game content code (temporary ignored for now cause its difficult to implement).
